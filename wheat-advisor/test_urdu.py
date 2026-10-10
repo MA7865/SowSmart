@@ -5,8 +5,9 @@ Run:
     python test_urdu.py simple
     python test_urdu.py agent
 
-The agent mode needs ANTHROPIC_API_KEY. Without a key, the default uses the
-simple helper and tool functions so the project can still be checked offline.
+The agent mode needs GEMINI_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY.
+Without a key, the default uses the simple helper and tool functions so the
+project can still be checked offline.
 """
 
 from __future__ import annotations
@@ -16,6 +17,10 @@ import re
 import sys
 
 import advisor
+
+
+def has_live_key() -> bool:
+    return any(os.environ.get(k) for k in ("GEMINI_API_KEY", "GROQ_API_KEY", "ANTHROPIC_API_KEY"))
 
 
 def has_urdu(text: str) -> bool:
@@ -53,9 +58,10 @@ def run_simple() -> int:
 
 
 def run_agent() -> int:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("SKIP: ANTHROPIC_API_KEY is not set, so agent mode cannot call Claude.")
+    if not has_live_key():
+        print("SKIP: set GEMINI_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY to run agent mode.")
         return 1
+    os.makedirs(os.path.join(advisor.HERE, "advice"), exist_ok=True)
     questions = [
         ("Multan mein 28 November ko gandum bona kaisa rahega?", "Multan", "11-28"),
         ("Faislabad mein 15 November ko bijai karun to kya hoga?", "Faisalabad", "11-15"),
@@ -64,6 +70,7 @@ def run_agent() -> int:
         ("Gandum mein kitni khad dalni chahiye?", "Multan", "11-15"),
     ]
     passed = 0
+    rows = []
     for question, district, sow in questions:
         try:
             answer, calls = advisor.ask_agent(question, context=advisor.app_context(district, sow))
@@ -71,14 +78,27 @@ def run_agent() -> int:
             if "khad" not in question.lower():
                 ok = ok and bool(calls)
             passed += check(question[:44], ok, answer[:80].replace("\n", " "))
+            rows.append((question, answer, calls, ok, ""))
         except Exception as exc:
             check(question[:44], False, str(exc))
+            rows.append((question, f"ERROR: {exc}", [], False, str(exc)))
     print(f"\n{passed}/{len(questions)} agent checks passed")
+    path = os.path.join(advisor.HERE, "advice", "test_run_agent.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"# Urdu agent test run\n\nPassed: {passed}/{len(questions)}\n\n")
+        for i, (question, answer, calls, ok, error) in enumerate(rows, 1):
+            f.write(f"## {i}. {'PASS' if ok else 'FAIL'}\n\n")
+            f.write(f"**Question:** {question}\n\n")
+            f.write(f"**Answer:**\n\n{answer}\n\n")
+            if error:
+                f.write(f"**Error:** {error}\n\n")
+            f.write(f"**Tool calls:** `{calls}`\n\n---\n\n")
+    print(f"saved {path}")
     return 0 if passed >= 4 else 1
 
 
 if __name__ == "__main__":
-    mode = sys.argv[1] if len(sys.argv) > 1 else ("agent" if os.environ.get("ANTHROPIC_API_KEY") else "simple")
+    mode = sys.argv[1] if len(sys.argv) > 1 else ("agent" if has_live_key() else "simple")
     if mode == "agent":
         raise SystemExit(run_agent())
     raise SystemExit(run_simple())
