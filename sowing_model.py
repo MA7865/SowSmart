@@ -89,6 +89,48 @@ def recommend(weather, window, cfg=None, years=None):
                          edge_flag=edge, n_tied_dates=n_tied))
     return pd.DataFrame(rows)
 
+def score_all_dates(weather, window, cfg=None, years=None):
+    """Score every candidate sowing date for each year."""
+    cfg = cfg or ModelConfig()
+    years = years or sorted(set(weather.index.year))
+    rows = []
+
+    for year in years:
+        season = _season_slice(weather, year)
+        if season is None:
+            continue
+
+        dates = _window_dates(year, window)[::cfg.step_days]
+        scored = [
+            (date, simulate(season, date, cfg))
+            for date in dates
+        ]
+        scored = [(date, result) for date, result in scored if result is not None]
+
+        if not scored:
+            continue
+
+        best_date, best_result = min(
+            scored,
+            key=lambda item: (item[1]["score"], item[0]),
+        )
+
+        for date, result in scored:
+            rows.append(
+                {
+                    "year": year,
+                    "sowing_date": date,
+                    "best_date": best_date,
+                    "is_best": date == best_date,
+                    "is_acceptable": (
+                        result["score"]
+                        <= best_result["score"] + cfg.score_tolerance
+                    ),
+                    **result,
+                }
+            )
+
+    return pd.DataFrame(rows)
 
 def summarize(rec, window, cfg=None):
     """Distribution of recommendations across years."""

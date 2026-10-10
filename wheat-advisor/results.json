@@ -383,7 +383,7 @@
       "median_heat": 0.0,
       "top_dates": {
         "01 Nov": 0.16,
-        "08 Nov": 0.12,
+        "04 Nov": 0.12,
         "06 Nov": 0.12
       }
     },
@@ -444,8 +444,8 @@
       "median_heat": 0.0,
       "top_dates": {
         "01 Nov": 0.2,
-        "03 Nov": 0.12,
-        "07 Nov": 0.12
+        "07 Nov": 0.12,
+        "03 Nov": 0.12
       }
     },
     "scenarios": [
