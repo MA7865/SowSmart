@@ -1,0 +1,10 @@
+heat_threshold,window_start,w_warm,median,median_latest_ok,p10,p90,pct_edge
+33,11-01,0.1,04 Nov,04 Nov,01 Nov,08 Nov,44.0
+33,11-01,0.5,07 Nov,08 Nov,01 Nov,13 Nov,28.000000000000004
+33,11-01,1.0,10 Nov,11 Nov,03 Nov,15 Nov,12.0
+34,11-01,0.1,05 Nov,05 Nov,01 Nov,11 Nov,36.0
+34,11-01,0.5,09 Nov,10 Nov,01 Nov,15 Nov,24.0
+34,11-01,1.0,12 Nov,13 Nov,07 Nov,17 Nov,4.0
+35,11-01,0.1,08 Nov,10 Nov,01 Nov,15 Nov,32.0
+35,11-01,0.5,11 Nov,13 Nov,05 Nov,17 Nov,8.0
+35,11-01,1.0,14 Nov,15 Nov,07 Nov,20 Nov,4.0

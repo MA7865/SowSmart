@@ -1,62 +1,62 @@
 {
   "Multan": {
     "province": "punjab",
-    "gdd_total": 1673.6,
+    "gdd_total": 1923.3,
     "summary": {
       "n_years": 25,
-      "median": "10 Nov",
-      "median_latest_ok": "18 Nov",
-      "median_days_to_maturity": 129.0,
+      "median": "05 Nov",
+      "median_latest_ok": "08 Nov",
+      "median_days_to_maturity": 142.0,
       "phenology_ok": true,
-      "p10": "03 Nov",
-      "p90": "18 Nov",
+      "p10": "01 Nov",
+      "p90": "11 Nov",
       "earliest": "01 Nov",
-      "latest": "26 Nov",
-      "pct_edge": 12.0,
-      "pct_ties": 68.0,
+      "latest": "16 Nov",
+      "pct_edge": 20.0,
+      "pct_ties": 32.0,
       "median_heat": 0.0,
       "top_dates": {
-        "09 Nov": 0.12,
-        "10 Nov": 0.12,
-        "14 Nov": 0.08
+        "05 Nov": 0.2,
+        "01 Nov": 0.16,
+        "10 Nov": 0.12
       }
     },
     "scenarios": [
       {
         "scenario": "baseline",
-        "median": "10 Nov",
-        "p10": "03 Nov",
-        "p90": "18 Nov",
-        "pct_edge": 12.0,
+        "median": "05 Nov",
+        "p10": "01 Nov",
+        "p90": "11 Nov",
+        "pct_edge": 20.0,
         "median_heat": 0.0,
-        "heat_at_ref_sowing": 0.0
+        "heat_at_ref_sowing": 7.300000000000004
       },
       {
         "scenario": "+1.0C",
-        "median": "14 Nov",
-        "p10": "08 Nov",
-        "p90": "23 Nov",
-        "pct_edge": 0.0,
+        "median": "10 Nov",
+        "p10": "02 Nov",
+        "p90": "15 Nov",
+        "pct_edge": 12.0,
         "median_heat": 0.0,
-        "heat_at_ref_sowing": 0.0
+        "heat_at_ref_sowing": 4.200000000000003
       },
       {
         "scenario": "+2.0C",
-        "median": "19 Nov",
-        "p10": "13 Nov",
-        "p90": "29 Nov",
-        "pct_edge": 0.0,
+        "median": "12 Nov",
+        "p10": "03 Nov",
+        "p90": "20 Nov",
+        "pct_edge": 12.0,
         "median_heat": 0.0,
-        "heat_at_ref_sowing": 0.0
+        "heat_at_ref_sowing": 2.1000000000000014
       },
       {
         "scenario": "+3.0C",
-        "median": "23 Nov",
-        "p10": "15 Nov",
-        "p90": "30 Nov",
+        "median": "14 Nov",
+        "p10": "07 Nov",
+        "p90": "22 Nov",
         "pct_edge": 0.0,
         "median_heat": 0.0,
-        "heat_at_ref_sowing": 0.0
+        "heat_at_ref_sowing": 0.8000000000000043
       }
     ]
   },
