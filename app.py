@@ -23,17 +23,7 @@ def bilingual_label(english, urdu=None):
 
 
 def district_label(name):
-    district_urdu = {
-        "Bahawalpur": "بہاولپور",
-        "Faisalabad": "فیصل آباد",
-        "Multan": "ملتان",
-        "Rahim Yar Khan": "رحیم یار خان",
-        "Sahiwal": "ساہیوال",
-        "Sargodha": "سرگودھا",
-        "Hyderabad": "حیدرآباد",
-        "Larkana": "لاڑکانہ",
-    }
-    return bilingual_label(name, district_urdu.get(name))
+    return name
 
 
 def show_bilingual(english, urdu=None, container=st, style="markdown"):
@@ -358,7 +348,7 @@ with tabs["Latest model"]:
     latest_district = st.selectbox(
         bilingual_label("District for latest model", "جدید ماڈل کے لیے ضلع"),
         districts,
-        format_func=lambda name: district_label(name.replace("_", " ")),
+        format_func=lambda name: name.replace("_", " "),
         key="latest_model_district",
     )
 
@@ -384,6 +374,13 @@ with tabs["Latest model"]:
         f'Median days to maturity: {summary["median_days_to_maturity"]:.0f}. '
         f'Calibrated GDD total: {district_result["gdd_total"]:.1f}.'
     )
+
+    if summary["pct_edge"] > 0:
+        st.info(
+            f'The selected date was at the edge of the tested sowing window '
+            f'in {summary["pct_edge"]:.0f}% of the years. Interpret the '
+            "recommendation cautiously."
+        )
 
     show_bilingual("Warming scenarios", "گرمائش کے منظرنامے", style="subheader")
     st.caption(
@@ -446,7 +443,7 @@ with tabs["Advisor"]:
     advisor_district = st.selectbox(
         bilingual_label("District", "ضلع"),
         sorted(latest_results),
-        format_func=lambda name: district_label(name.replace("_", " ")),
+        format_func=lambda name: name.replace("_", " "),
         key="advisor_district",
     )
 
@@ -462,7 +459,7 @@ with tabs["Advisor"]:
     default_date = "11-15" if "11-15" in available_dates else available_dates[0]
 
     sow_mmdd = st.selectbox(
-        bilingual_label("Date to simulate (month-day)", "جانچنے کی تاریخ (مہینہ-دن)"),
+        bilingual_label("Date to simulate (month-day)", "جانچنے کی تاریخ"),
         available_dates,
         index=available_dates.index(default_date),
         key="advisor_sowing_date",
