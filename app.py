@@ -2,9 +2,13 @@ import base64
 import html
 import json
 import os
-
+from pathlib import Path
+import numpy as np
 import pandas as pd
 import streamlit as st
+import importlib.util
+from config import DISTRICT_PROVINCE, ModelConfig, WINDOWS
+from sowing_model import calibrate_gdd_total, recommend
 
 st.set_page_config(
     page_title="Wheat Sowing Advisor",
@@ -51,6 +55,74 @@ def load_json(path):
 
 
 res = load_json(DATA_FILE)
+APP_DIR = Path(__file__).resolve().parent
+LATEST_RESULTS_PATH = APP_DIR / "wheat-advisor" / "results.json"
+LATEST_YEARLY_DIR = APP_DIR / "wheat-advisor" / "results"
+
+
+@st.cache_data
+def load_versioned_json(path, modified_at):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@st.cache_data
+def load_versioned_csv(path, modified_at):
+    return pd.read_csv(path)
+
+@st.cache_data
+def load_model_weather(path, modified_at):
+    weather_df = pd.read_csv(path, parse_dates=["time"])
+
+    required = {"time", "temperature_2m_max", "temperature_2m_min"}
+    missing = required - set(weather_df.columns)
+    if missing:
+        raise ValueError(f"Weather file is missing columns: {sorted(missing)}")
+
+    return (
+        weather_df.rename(
+            columns={
+                "time": "date",
+                "temperature_2m_max": "tmax",
+                "temperature_2m_min": "tmin",
+            }
+        )
+        .sort_values("date")
+        .drop_duplicates("date")
+        .set_index("date")[["tmax", "tmin"]]
+    )
+
+
+@st.cache_data
+def calculate_selected_date_results(weather_path, modified_at, district, sow_mmdd):
+    weather = load_model_weather(weather_path, modified_at)
+    province = DISTRICT_PROVINCE[district]
+
+    cfg = ModelConfig()
+    target_days = {"punjab": 140, "sindh": 128}[province]
+    cfg.gdd_total = calibrate_gdd_total(
+        weather,
+        sow_mmdd="11-18",
+        target_days=target_days,
+        cfg=cfg,
+    )
+
+    return recommend(
+        weather,
+        (sow_mmdd, sow_mmdd),
+        cfg,
+        years=range(2000, 2025),
+    )
+
+if not LATEST_RESULTS_PATH.is_file():
+    st.error(f"Latest model results file was not found: {LATEST_RESULTS_PATH}")
+    st.stop()
+
+latest_results = load_versioned_json(
+    str(LATEST_RESULTS_PATH),
+    LATEST_RESULTS_PATH.stat().st_mtime,
+)
+
 if USING_MOCK or any(v.get("FAKE") for v in res.values()):
     show_bilingual(
         "USING FAKE DATA. Numbers are for building only. Do not present this.",
@@ -61,11 +133,16 @@ if USING_MOCK or any(v.get("FAKE") for v in res.values()):
 ml = load_json("ml_results.json") if os.path.exists("ml_results.json") else None
 
 # ---------------- Urdu helper (optional, never crashes the app) ----------------
-try:
-    import advisor
-except Exception:
-    advisor = None
+ADVISOR_PATH = APP_DIR / "wheat-advisor" / "advisor.py"
+advisor_spec = importlib.util.spec_from_file_location(
+    "wheat_advisor_urdu",
+    ADVISOR_PATH,
+)
+if advisor_spec is None or advisor_spec.loader is None:
+    raise ImportError(f"Could not load Urdu advisor from {ADVISOR_PATH}")
 
+advisor = importlib.util.module_from_spec(advisor_spec)
+advisor_spec.loader.exec_module(advisor)
 
 def get_answer(question, context):
     """Return the advisor answer and tool calls, propagating failures to the UI."""
@@ -104,11 +181,7 @@ def save_urdu_answer(question):
 def show_saved_urdu_answer():
     error = st.session_state.get("urdu_error")
     if error:
-        show_bilingual(
-            f"Could not answer this question: {error}",
-            f"اس سوال کا جواب نہیں دے سکے۔ تفصیل: {error}",
-            style="error",
-        )
+        st.error(f"Could not answer this question: {error}")
     answer = st.session_state.get("urdu_answer")
     if not answer:
         return
@@ -118,44 +191,30 @@ def show_saved_urdu_answer():
         f"<div class='urdu'>{safe_answer}</div>",
         unsafe_allow_html=True,
     )
-    if st.button(bilingual_label("Read answer aloud", "جواب بلند آواز میں سنیں")):
+    if st.button("Read answer aloud"):
         if advisor is None or not hasattr(advisor, "synthesize_speech"):
-            show_bilingual(
-                "Gemini speech generation is unavailable because the advisor module is not connected.",
-                "ایڈوائزر ماڈیول منسلک نہیں، اس لیے Gemini سے آواز بنانا دستیاب نہیں۔",
-                style="error",
-            )
+            st.error("Gemini speech generation is unavailable because the advisor module is not connected.")
         else:
             try:
-                with st.spinner(bilingual_label("Generating Urdu speech...", "اردو آواز تیار ہو رہی ہے...")):
+                with st.spinner("Generating Urdu speech..."):
                     st.session_state["urdu_speech_audio"] = advisor.synthesize_speech(answer)
                     st.session_state["urdu_speech_text"] = answer
             except Exception as exc:
-                show_bilingual(
-                    f"Could not generate speech: {exc}",
-                    f"آواز تیار نہیں ہو سکی۔ تفصیل: {exc}",
-                    style="error",
-                )
+                st.error(f"Could not generate speech: {exc}")
     if (
         st.session_state.get("urdu_speech_text") == answer
         and st.session_state.get("urdu_speech_audio")
     ):
         st.audio(st.session_state["urdu_speech_audio"], format="audio/wav")
     if calls:
-        with st.expander(bilingual_label("How the helper got its numbers (tool calls)", "مددگار نے اعداد کیسے حاصل کیے؟")):
+        with st.expander("How the helper got its numbers (tool calls)"):
             st.json(calls)
-    show_bilingual(
+    st.caption(
         "The helper only uses numbers from this tool. It does not give advice on seed, "
-        "fertilizer, irrigation or pesticides.",
-        "مددگار صرف اس آلے کے اعداد استعمال کرتا ہے۔ یہ بیج، کھاد، آبپاشی یا کیڑے مار ادویات کے بارے میں مشورہ نہیں دیتا۔",
-        style="caption",
+        "fertilizer, irrigation or pesticides."
     )
     if not calls:
-        show_bilingual(
-            "The helper returned a plain fallback answer without tool-call metadata.",
-            "مددگار نے ٹول کی تفصیل کے بغیر ایک سادہ متبادل جواب دیا ہے۔",
-            style="caption",
-        )
+        st.caption("The helper returned a plain fallback answer without tool-call metadata.")
 
 
 # ---------------- styles ----------------
@@ -164,12 +223,11 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap');
 html, body, [data-testid="stAppViewContainer"] {
-    background: linear-gradient(180deg, #f7faf4 0%, #edf3e9 100%);
-    color: #202820;
+    background: linear-gradient(180deg, #07131f 0%, #0d1d2b 100%);
+    color: #f3f6fb;
 }
 .stApp {
     background: transparent;
-    color: #202820;
 }
 .urdu {direction: rtl; text-align: right; font-family: 'Noto Nastaliq Urdu', serif;
        font-size: 16px; line-height: 1.8; color: #202820;}
@@ -219,7 +277,7 @@ st.caption(
 
 # ---------------- map ----------------
 map_df = pd.DataFrame([
-    {"district": district_label(k), "lat": v["lat"], "lon": v["lon"]} for k, v in res.items()
+    {"district": k, "lat": v["lat"], "lon": v["lon"]} for k, v in res.items()
 ])
 try:
     import plotly.express as px
@@ -227,7 +285,7 @@ try:
     mdf = pd.DataFrame(
         [
             {
-                "district": district_label(k),
+                "district": k,
                 "lat": v["lat"],
                 "lon": v["lon"],
                 "best_day_number": v["labels"].index(v["best"]),
@@ -237,12 +295,15 @@ try:
         ]
     )
     fig = px.scatter_mapbox(
-        mdf,
+        map_df,
         lat="lat",
         lon="lon",
-        color="best_day_number",
+        color="median_selected_day",
         hover_name="district",
-        hover_data={"best": True, "best_day_number": False},
+        hover_data={
+            "recommended_range": True,
+            "median_selected_day": False,
+        },
         zoom=4.5,
         height=380,
         mapbox_style="open-street-map",
@@ -251,11 +312,11 @@ try:
     fig.update_traces(marker={"size": 16})
     fig.update_layout(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        coloraxis_colorbar_title=bilingual_label("Best day", "بہترین دن"),
+        coloraxis_colorbar_title="Best day",
     )
     st.plotly_chart(fig, use_container_width=True)
 except Exception:
-    st.map(map_df, latitude="lat", longitude="lon")
+    st.map(map_df[["lat", "lon"]], latitude="lat", longitude="lon")
 
 # ---------------- selectors ----------------
 c1, c2 = st.columns(2)
@@ -283,76 +344,161 @@ facts = {
 }
 
 tab_names = [
-    bilingual_label("Advisor", "رہنما"),
-    bilingual_label("2022 check", "2022 کا جائزہ"),
-    bilingual_label("25-year drift", "25 سالہ رجحان"),
-    bilingual_label("Ask in Urdu", "اردو میں پوچھیں"),
+    "Latest model",
+    "Advisor",
+    "2022 check",
+    "25-year drift",
+    "Ask in Urdu",
     bilingual_label("Limits", "حدود"),
 ]
 if ml is not None:
     tab_names.insert(4, bilingual_label("Satellite check", "سیٹلائٹ کا جائزہ"))
 tabs = dict(zip(tab_names, st.tabs(tab_names)))
 
-# ---------------- Advisor tab ----------------
-with tabs[bilingual_label("Advisor", "رہنما")]:
-    m1, m2, m3 = st.columns(3)
-    m1.metric(bilingual_label("Safest window", "محفوظ ترین مدت"), f"{d['window_start']} to {d['window_end']} | {d['window_start']} تا {d['window_end']}")
-    m2.metric(bilingual_label("Best day", "بہترین دن"), d["best"])
-    m3.metric(bilingual_label("Your date: extra stress vs best", "آپ کی تاریخ: بہترین تاریخ سے اضافی دباؤ"), f"{your - best:+.1f}")
-    show_bilingual(
-        "Stress = heat days in grain filling + 2 x frost days + 2 x days of late maturity. Lower is safer.",
-        "دباؤ = دانہ بننے کے دوران گرم دن + کہر کے دنوں کے 2 گنا + دیر سے پکنے کے دنوں کے 2 گنا۔ کم دباؤ زیادہ محفوظ ہے۔",
-        style="caption",
+
+# ---------------- Latest model tab ----------------
+with tabs["Latest model"]:
+    st.header("Latest wheat model")
+    st.caption(
+        "These results come from the newer season-specific model. "
+        "They are separate from the older model shown in the other tabs."
     )
-    if d.get("edge_warning"):
-        show_bilingual(
-            "The best date is at the edge of the tested range for this district. Treat with care.",
-            "اس ضلع میں بہترین تاریخ آزمائی گئی حد کے کنارے پر ہے۔ اس نتیجے کو احتیاط سے دیکھیں۔",
-            style="warning",
+    st.warning(
+        "Historical simulation, not a forecast. A season's selected date "
+        "is calculated using that season's weather; it is not necessarily "
+        "the date farmers actually sowed."
+    )
+
+    districts = sorted(latest_results)
+    latest_district = st.selectbox(
+        "District for latest model",
+        districts,
+        format_func=lambda name: name.replace("_", " "),
+        key="latest_model_district",
+    )
+
+    district_result = latest_results[latest_district]
+    summary = district_result["summary"]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Median model-selected date", summary["median"])
+    col2.metric(
+        "Historical date range (P10–P90)",
+        f'{summary["p10"]} to {summary["p90"]}',
+    )
+    col3.metric(
+        "Median latest acceptable date",
+        summary["median_latest_ok"],
+    )
+
+    st.caption(
+        f'Model summary covers {summary["n_years"]} years. '
+        f'Median days to maturity: {summary["median_days_to_maturity"]:.0f}. '
+        f'Calibrated GDD total: {district_result["gdd_total"]:.1f}.'
+    )
+
+    if summary["pct_edge"] > 0:
+        st.info(
+            f'The selected date was at the edge of the tested sowing window '
+            f'in {summary["pct_edge"]:.0f}% of the years. Interpret the '
+            "recommendation cautiously."
         )
 
-    show_bilingual("Stress by sowing date (average of 25 years)", "بوائی کی تاریخ کے لحاظ سے دباؤ (25 سالہ اوسط)", style="subheader")
-    st.line_chart(pd.DataFrame({bilingual_label("Stress", "دباؤ"): d["mean_curve"]}, index=d["labels"]))
-
-    show_bilingual("What if I sow earlier or later?", "اگر میں پہلے یا بعد میں بوائی کروں تو؟", style="subheader")
-    shift = st.slider(bilingual_label("Move my sowing date by (days)", "میری بوائی کی تاریخ اتنے دن بدلیں"), -30, 30, 0)
-    k = max(0, min(len(d["labels"]) - 1, i + shift))
-    show_bilingual(
-        f"Sowing on **{d['labels'][k]}**: stress {d['mean_curve'][k]:.1f} "
-        f"(your chosen date: {your:.1f}, change {d['mean_curve'][k] - your:+.1f}).",
-        f"**{d['labels'][k]}** کو بوائی: دباؤ {d['mean_curve'][k]:.1f} "
-        f"(آپ کی منتخب تاریخ کا دباؤ: {your:.1f}، تبدیلی {d['mean_curve'][k] - your:+.1f})۔",
+    st.subheader("Warming scenarios")
+    st.caption(
+        "These are model scenarios that shift historical weather by the "
+        "listed amount. They are not forecasts for a particular future year."
     )
-    show_bilingual(
+
+    scenarios = pd.DataFrame(district_result["scenarios"])
+    scenario_columns = [
+        "scenario",
+        "median",
+        "p10",
+        "p90",
+        "median_heat",
+        "heat_at_ref_sowing",
+        "pct_edge",
+    ]
+    st.dataframe(
+        scenarios[scenario_columns],
+        hide_index=True,
+    )
+
+    st.subheader("Year-by-year model results")
+
+    yearly_path = (
+    LATEST_YEARLY_DIR
+    / f"{latest_district}_per_year.csv"
+    )
+
+    if not yearly_path.is_file():
+        st.error(
+            f"Yearly results file was not found for "
+            f"{latest_district.replace('_', ' ')}: {yearly_path}"
+        )
+        st.stop()
+
+    yearly = load_versioned_csv(
+        str(yearly_path),
+        yearly_path.stat().st_mtime,
+    )
+
+    chart_data = yearly.set_index("year")[["score", "heat", "warm"]]
+    st.line_chart(
+        chart_data,
+        alt="Annual model stress score and heat and warmth components",
+    )
+    st.caption(
+        "The score combines weighted model stress components. The heat and "
+        "warm columns are model quantities, not observed yield losses."
+    )
+
+
+# ---------------- Advisor tab ----------------
+with tabs["Advisor"]:
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Safest window", f"{d['window_start']} to {d['window_end']}")
+    m2.metric("Best day", d["best"])
+    m3.metric("Your date: extra stress vs best", f"{your - best:+.1f}")
+    st.caption("Stress = heat days in grain filling + 2 x frost days + 2 x days of late maturity. Lower is safer.")
+    if d.get("edge_warning"):
+        st.warning("The best date is at the edge of the tested range for this district. Treat with care.")
+
+    st.subheader("Stress by sowing date (average of 25 years)")
+    st.line_chart(pd.DataFrame({"stress": d["mean_curve"]}, index=d["labels"]))
+
+    st.subheader("What if I sow earlier or later?")
+    shift = st.slider("Move my sowing date by (days)", -30, 30, 0)
+    k = max(0, min(len(d["labels"]) - 1, i + shift))
+    st.write(
+        f"Sowing on **{d['labels'][k]}**: stress {d['mean_curve'][k]:.1f} "
+        f"(your chosen date: {your:.1f}, change {d['mean_curve'][k] - your:+.1f})."
+    )
+    st.caption(
         f"Share of past years in which the best day was within tolerance of that year's best: "
-        f"{d['share_of_years_ok']:.0%}. This is not a forecast probability.",
-        f"گزشتہ برسوں میں {d['share_of_years_ok']:.0%} برسوں میں بہترین دن، اس سال کے بہترین دن کی قابلِ قبول حد میں تھا۔ "
-        "یہ موجودہ موسم کی پیش گوئی کا امکان نہیں ہے۔",
-        style="caption",
+        f"{d['share_of_years_ok']:.0%}. This is not a forecast probability."
     )
 
 # ---------------- 2022 tab ----------------
-with tabs[bilingual_label("2022 check", "2022 کا جائزہ")]:
+with tabs["2022 check"]:
     b = d["backtest_2022"]
-    show_bilingual(
+    st.write(
         f"At the standard sowing date (15 Nov), the 2022 season had "
-        f"**{b['heat_days_std_sowing']} heat days** in grain filling in {district_label(district)}. "
-        f"That is hotter than about **{b['percentile_hot_year']}%** of seasons from 2001 to 2021.",
-        f"معیاری بوائی کی تاریخ (15 نومبر) پر 2022 کے موسم میں {URDU_DISTRICTS.get(district, district)} کے اندر دانہ بننے کے دوران "
-        f"**{b['heat_days_std_sowing']} گرم دن** تھے۔ یہ 2001 سے 2021 کے تقریباً **{b['percentile_hot_year']}%** "
-        "موسموں سے زیادہ گرم تھا۔",
+        f"**{b['heat_days_std_sowing']} heat days** in grain filling in {district}. "
+        f"That is hotter than about **{b['percentile_hot_year']}%** of seasons from 2001 to 2021."
     )
-    show_bilingual("Heat days in 2022 by sowing date (simulation)", "2022 میں بوائی کی تاریخ کے لحاظ سے گرم دن (سیمولیشن)", style="subheader")
+    st.subheader("Heat days in 2022 by sowing date (simulation)")
     hd = b["heat_days_by_sowing_date"]
-    st.bar_chart(pd.DataFrame({bilingual_label("Heat days", "گرم دن"): list(hd.values())}, index=list(hd.keys())))
-    show_bilingual("A simulation check, not proof of crop losses.", "یہ سیمولیشن کی جانچ ہے، فصل کے نقصان کا ثبوت نہیں۔", style="caption")
-    show_bilingual("All districts", "تمام اضلاع", style="subheader")
+    st.bar_chart(pd.DataFrame({"heat days": list(hd.values())}, index=list(hd.keys())))
+    st.caption("A simulation check, not proof of crop losses.")
+    st.subheader("All districts")
     st.dataframe(
         pd.DataFrame(
             {
-                district_label(k): {
-                    bilingual_label("Heat days at 15 Nov sowing (2022)", "15 نومبر کی بوائی پر گرم دن (2022)"): v["backtest_2022"]["heat_days_std_sowing"],
-                    bilingual_label("Hotter than % of earlier years", "گزشتہ برسوں میں اتنے فیصد سے زیادہ گرم"): v["backtest_2022"]["percentile_hot_year"],
+                k: {
+                    "Heat days at 15 Nov sowing (2022)": v["backtest_2022"]["heat_days_std_sowing"],
+                    "Hotter than % of earlier years": v["backtest_2022"]["percentile_hot_year"],
                 }
                 for k, v in res.items()
             }
@@ -360,42 +506,52 @@ with tabs[bilingual_label("2022 check", "2022 کا جائزہ")]:
     )
 
 # ---------------- drift tab ----------------
-with tabs[bilingual_label("25-year drift", "25 سالہ رجحان")]:
-    show_bilingual("Has the best sowing date moved over 25 years? Positive numbers mean later.",
-                   "کیا 25 برسوں میں بہترین بوائی کی تاریخ بدلی ہے؟ مثبت عدد کا مطلب ہے کہ تاریخ بعد میں ہوئی۔")
+with tabs["25-year drift"]:
+    st.write("Has the best sowing date moved over 25 years? Positive numbers mean later.")
     rows = {}
     for k_, v in res.items():
         p_value = v.get("drift_p_value")
         if p_value is None:
-            verdict = bilingual_label("not enough information", "معلومات ناکافی ہیں")
+            verdict = "not enough information"
         else:
-            verdict = (
-                bilingual_label("clear shift", "واضح تبدیلی")
-                if p_value < 0.05
-                else bilingual_label("no clear shift", "واضح تبدیلی نہیں")
-            )
+            verdict = "clear shift" if p_value < 0.05 else "no clear shift"
         rows[k_] = {
-            bilingual_label("Days per decade", "فی دہائی دن"): v["drift_days_per_decade"],
-            bilingual_label("p-value", "پی ویلیو"): p_value if p_value is not None else bilingual_label("n/a", "دستیاب نہیں"),
-            bilingual_label("Verdict", "نتیجہ"): verdict,
+            "Days per decade": v["drift_days_per_decade"],
+            "p-value": p_value if p_value is not None else "n/a",
+            "Verdict": verdict,
         }
     st.dataframe(pd.DataFrame(rows).T)
-    show_bilingual(
-        "A p-value above 0.05 means we cannot say the date moved. A null p-value means the trend could not be tested in this dataset.",
-        "0.05 سے بڑا p-value ہونے کا مطلب ہے کہ تاریخ کی تبدیلی کا نتیجہ واضح نہیں۔ خالی p-value کا مطلب ہے کہ اس ڈیٹا سے رجحان کی جانچ نہیں ہو سکی۔",
-        style="caption",
-    )
+    st.caption("A p-value above 0.05 means we cannot say the date moved. A null p-value means the trend could not be tested in this dataset.")
 
 # ---------------- Urdu tab ----------------
-with tabs[bilingual_label("Ask in Urdu", "اردو میں پوچھیں")]:
-    show_bilingual(
-        "Ask in Urdu or Roman Urdu, for example: Multan mein 28 November ko gandum bona kaisa rahega?",
-        "اردو یا رومن اردو میں سوال پوچھیں، مثلاً: ملتان میں 28 نومبر کو گندم بونا کیسا رہے گا؟",
-    )
-    q = st.text_input(bilingual_label("Your question", "آپ کا سوال"))
-    if st.button(bilingual_label("Ask", "پوچھیں")) and q.strip():
+with tabs["Ask in Urdu"]:
+    st.write("Ask in Urdu or Roman Urdu, for example: Multan mein 28 November ko gandum bona kaisa rahega?")
+    q = st.text_input("Your question")
+    if st.button("Ask") and q.strip():
         save_urdu_answer(q)
 
+    st.divider()
+    st.subheader("Ask by voice")
+    st.caption(
+        "Record a short question (30 seconds or less) in Urdu or Roman Urdu. When you choose “Transcribe and ask,” "
+        "the recording is sent to Groq for transcription and is not saved by this app. "
+        "Read-aloud audio is also generated by Gemini when requested."
+    )
+    voice_audio = st.audio_input("Record your question", sample_rate=16000)
+    groq_ready = advisor is not None and advisor.groq_voice_configured()
+    if not groq_ready:
+        st.info("Voice questions require GROQ_API_KEY in the project .env file.")
+    if st.button("Transcribe and ask", disabled=voice_audio is None or not groq_ready):
+        if advisor is None or not hasattr(advisor, "transcribe_audio"):
+            st.error("Voice transcription is unavailable because the advisor module is not connected.")
+        else:
+            try:
+                with st.spinner("Transcribing your question with Groq..."):
+                    transcript = advisor.transcribe_audio(voice_audio.getvalue())
+                st.markdown(f"**Recognized question:** {transcript}")
+                save_urdu_answer(transcript)
+            except Exception as exc:
+                st.error(f"Could not transcribe the recording: {exc}")
     show_saved_urdu_answer()
 
 # ---------------- Satellite tab (only if D delivered ml_results.json) ----------------

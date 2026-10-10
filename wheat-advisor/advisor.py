@@ -10,7 +10,7 @@ key is unavailable, ask() returns a safe Urdu answer from the supplied facts.
 """
 
 from __future__ import annotations
-
+from config import DISTRICT_PROVINCE, WINDOWS
 import base64
 import io
 import json
@@ -22,9 +22,9 @@ import urllib.request
 import wave
 from difflib import get_close_matches
 from typing import Any
-
+import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
-
+RESULTS_DIR = os.path.join(HERE, "results")
 
 def _load_project_env() -> None:
     env_path = os.path.join(HERE, os.pardir, ".env")
@@ -143,14 +143,37 @@ def _has_urdu_text(text: str) -> bool:
 
 
 def _load_results() -> dict[str, Any]:
-    """Load real results first, then the mock. Re-read on each call."""
-    for fname in ("results.json", "results_mock.json"):
-        path = os.path.join(HERE, fname)
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-    raise FileNotFoundError("neither results.json nor results_mock.json found")
+    """Load district summaries from the newer model."""
+    path = os.path.join(HERE, "results.json")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"New-model results file not found: {path}")
 
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+def _load_yearly_results(district: str) -> pd.DataFrame:
+    path = os.path.join(RESULTS_DIR, f"{district}_per_year.csv")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Yearly results file not found: {path}")
+    return pd.read_csv(path)
+
+
+def _load_date_scores(district: str) -> pd.DataFrame:
+    path = os.path.join(RESULTS_DIR, f"{district}_date_scores.csv")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"Date-score file not found: {path}. Generate the new model's "
+            "date-score results first."
+        )
+    scores = pd.read_csv(path, parse_dates=["sowing_date"])
+    required = {"year", "sowing_date", "score"}
+    missing = required - set(scores.columns)
+    if missing:
+        raise ValueError(
+            f"{path} is missing required columns: {sorted(missing)}"
+        )
+    scores["month_day"] = scores["sowing_date"].dt.strftime("%m-%d")
+    return scores
 
 def _is_fake(res: dict[str, Any]) -> bool:
     return any(v.get("FAKE") for v in res.values())
@@ -572,87 +595,151 @@ def _norm_date(value: str, labels: list[str]) -> str | None:
 def _tool_setup(args: dict[str, Any], res: dict[str, Any], *date_keys: str):
     name = _find_district(str(args.get("district", "")), res)
     if name is None:
-        return None, None, {"error": "district not found", "districts": list(res.keys())}
-    labels = res[name]["labels"]
+        return None, None, {"error": "district not found", "districts": list(res)}
+
+    province = DISTRICT_PROVINCE[name]
+    window_start, window_end = WINDOWS[province]
+    labels = [
+        day.strftime("%m-%d")
+        for day in pd.date_range(
+            f"2001-{window_start}",
+            f"2001-{window_end}",
+        )
+    ]
+
     dates = {}
     for key in date_keys:
-        dt = _norm_date(str(args.get(key, "")), labels)
-        if dt is None:
-            return None, None, {"error": f"{key} must be MM-DD between {labels[0]} and {labels[-1]}"}
-        dates[key] = dt
+        normalized = _norm_date(str(args.get(key, "")), labels)
+        if normalized is None:
+            return None, None, {
+                "error": (
+                    f"{key} must be a date within this district's sowing "
+                    f"window ({window_start} to {window_end})"
+                )
+            }
+        dates[key] = normalized
+
     return name, dates, None
 
 
 def run_tool(tool: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Execute one lookup for the agent. Always returns a JSON-safe dict."""
+    """Answer Urdu-advisor lookups from saved new-model results."""
     try:
-        res = _load_results()
-        fake = _is_fake(res)
+        results = _load_results()
+
         if tool == "list_districts":
-            out = {"districts": list(res.keys()), "sowing_range": ["10-01", "12-31"]}
-        elif tool == "get_district_summary":
-            name, _, err = _tool_setup(args, res)
-            if err:
-                return err
-            d = res[name]
-            out = {
-                "district": name,
-                "best_day": d["best"],
-                "safest_window": [d["window_start"], d["window_end"]],
-                "share_of_past_years_best_day_was_ok": d["share_of_years_ok"],
-                "best_day_drift_days_per_decade": d["drift_days_per_decade"],
-                "drift_p_value": d["drift_p_value"],
+            return {
+                "districts": list(results),
+                "note": "Dates and scores are from the newer model's saved results.",
+                "data_is_fake": False,
             }
-        elif tool == "get_stress_for_date":
-            name, dates, err = _tool_setup(args, res, "date")
-            if err:
-                return err
-            d = res[name]
-            idx = d["labels"].index(dates["date"])
-            best_idx = d["labels"].index(d["best"])
-            stress = d["mean_curve"][idx]
-            best = d["mean_curve"][best_idx]
-            out = {
+
+        required_dates = {
+            "get_stress_for_date": ("date",),
+            "compare_dates": ("date_a", "date_b"),
+            "get_district_summary": (),
+        }
+        if tool not in required_dates:
+            return {"error": f"unknown tool {tool}"}
+
+        name, dates, error = _tool_setup(
+            args,
+            results,
+            *required_dates[tool],
+        )
+        if error:
+            return error
+
+        if tool == "get_district_summary":
+            summary = results[name]["summary"]
+            return {
+                "district": name,
+                "best_day": summary["median"],
+                "historical_date_range": [
+                    summary["p10"],
+                    summary["p90"],
+                ],
+                "median_latest_acceptable_date": summary["median_latest_ok"],
+                "years_covered": summary["n_years"],
+                "data_is_fake": False,
+            }
+
+        scores = _load_date_scores(name)
+        yearly = _load_yearly_results(name)[["year", "best_date", "score"]]
+        yearly = yearly.rename(columns={"score": "best_score"})
+
+        if tool == "get_stress_for_date":
+            selected = scores.loc[
+                scores["month_day"] == dates["date"],
+                ["year", "score"],
+            ].rename(columns={"score": "selected_score"})
+
+            comparison = selected.merge(
+                yearly,
+                on="year",
+                how="inner",
+                validate="one_to_one",
+            )
+            if comparison.empty:
+                return {
+                    "error": (
+                        f"No saved scores for {dates['date']} in "
+                        f"{name}'s historical results."
+                    )
+                }
+
+            difference = comparison["selected_score"] - comparison["best_score"]
+            return {
                 "district": name,
                 "date": dates["date"],
-                "stress_score": stress,
-                "best_day": d["best"],
-                "best_day_stress_score": best,
-                "extra_stress_vs_best": round(stress - best, 1),
-                "inside_safest_window": d["window_start"] <= dates["date"] <= d["window_end"],
-                "safest_window": [d["window_start"], d["window_end"]],
+                "stress_score": float(comparison["selected_score"].median()),
+                "best_day": str(dates["date"]),
+                "best_day_stress_score": float(comparison["best_score"].median()),
+                "extra_stress_vs_best": float(difference.median()),
+                "years_compared": int(len(comparison)),
+                "data_is_fake": False,
             }
-        elif tool == "compare_dates":
-            name, dates, err = _tool_setup(args, res, "date_a", "date_b")
-            if err:
-                return err
-            d = res[name]
-            a = d["mean_curve"][d["labels"].index(dates["date_a"])]
-            b = d["mean_curve"][d["labels"].index(dates["date_b"])]
-            out = {
-                "district": name,
-                "date_a": dates["date_a"],
-                "stress_a": a,
-                "date_b": dates["date_b"],
-                "stress_b": b,
-                "difference_b_minus_a": round(b - a, 1),
-                "note": "positive difference means date_b has more stress and is less safe",
+
+        score_a = scores.loc[
+            scores["month_day"] == dates["date_a"],
+            ["year", "score"],
+        ].rename(columns={"score": "stress_a"})
+        score_b = scores.loc[
+            scores["month_day"] == dates["date_b"],
+            ["year", "score"],
+        ].rename(columns={"score": "stress_b"})
+
+        comparison = score_a.merge(
+            score_b,
+            on="year",
+            how="inner",
+            validate="one_to_one",
+        )
+        if comparison.empty:
+            return {
+                "error": (
+                    "No matching historical years are available for both dates."
+                )
             }
-        elif tool == "get_2022_check":
-            name, _, err = _tool_setup(args, res)
-            if err:
-                return err
-            out = {
-                "district": name,
-                **res[name]["backtest_2022"],
-                "note": "simulated heat days in grain filling for the 2022 season; not a harvest or income estimate",
-            }
-        else:
-            return {"error": f"unknown tool {tool}"}
-        out["data_is_fake"] = fake
-        return out
+
+        comparison["difference"] = comparison["stress_b"] - comparison["stress_a"]
+        return {
+            "district": name,
+            "date_a": dates["date_a"],
+            "stress_a": float(comparison["stress_a"].median()),
+            "date_b": dates["date_b"],
+            "stress_b": float(comparison["stress_b"].median()),
+            "difference_b_minus_a": float(comparison["difference"].median()),
+            "years_compared": int(len(comparison)),
+            "note": (
+                "Positive difference means date_b has a higher median "
+                "simulated stress score across the same historical years."
+            ),
+            "data_is_fake": False,
+        }
+
     except Exception as exc:
-        return {"error": f"tool failed: {exc}"}
+        return {"error": f"New-model lookup failed: {exc}"}
 
 
 def _answer_from_tool_result(tool: str, out: dict[str, Any]) -> str:
@@ -699,15 +786,7 @@ def _answer_from_tool_result(tool: str, out: dict[str, Any]) -> str:
             + direction
             + " یہ پچھلے 25 سال کے موسم پر مبنی سیمیولیشن ہے، پیش گوئی نہیں۔"
         )
-    if tool == "get_2022_check":
-        return (
-            fake
-            + f"{district} میں 2022 کی سیمیولیشن کے مطابق 15 نومبر کی بوائی پر گرمی کے "
-            + f"{out['heat_days_std_sowing']} دن آئے۔ "
-            + f"یہ پچھلے سالوں کے تقریباً {out['percentile_hot_year']} فیصد سے زیادہ گرم تھا۔ "
-            + "یہ صرف گرمی کے دنوں کی سیمیولیشن ہے، پیداوار یا نقصان کا دعویٰ نہیں۔"
-        )
-    return "معذرت، اس سوال کا جواب اس وقت دستیاب نہیں۔"
+    
 
 
 _D = {
@@ -751,11 +830,7 @@ TOOLS = [
             "required": ["district", "date_a", "date_b"],
         },
     },
-    {
-        "name": "get_2022_check",
-        "description": "Simulated heat days in 2022 and heat days for earlier or later sowing.",
-        "input_schema": {"type": "object", "properties": _D, "required": ["district"]},
-    },
+   
 ]
 
 AGENT_SYSTEM = (
@@ -839,9 +914,7 @@ def _local_agent_for_openai_style_provider(question: str, context: str) -> tuple
         calls.append({"tool": "list_districts", "input": {}, "output": out})
         return _needs_district(), calls
 
-    if "2022" in q:
-        tool, args = "get_2022_check", {"district": district}
-    elif len(dates) >= 2 or "farq" in q or "compare" in q:
+    if len(dates) >= 2 or "farq" in q or "compare" in q:
         if len(dates) < 2:
             return "براہ کرم موازنہ کے لیے دو انگریزی تاریخیں بتائیں، مثلاً 11-05 اور 12-01۔", calls
         tool, args = "compare_dates", {"district": district, "date_a": dates[0], "date_b": dates[1]}

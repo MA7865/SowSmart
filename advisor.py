@@ -5,6 +5,14 @@ This wrapper loads that implementation so imports from the repo root also work.
 """
 
 from __future__ import annotations
+from sowing_model import (
+    calibrate_gdd_total,
+    recommend,
+    scenario_table,
+    score_all_dates,
+    sensitivity,
+    summarize,
+)
 
 import importlib.util
 import os
@@ -142,6 +150,16 @@ def main():
         _make_chart(name, rec, scenarios)
 
         rec.to_csv(RESULTS_DIR / f"{name}_per_year.csv", index=False)
+        date_scores = score_all_dates(
+            weather,
+            window,
+            cfg,
+            years=YEARS,
+        )
+        date_scores.to_csv(
+            RESULTS_DIR / f"{name}_date_scores.csv",
+            index=False,
+        )
         scenarios.to_csv(RESULTS_DIR / f"{name}_scenarios.csv", index=False)
 
         results[name] = {
