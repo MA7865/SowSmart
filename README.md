@@ -12,7 +12,13 @@ SowSmart helps farmers and agricultural advisors in Punjab and Sindh compare whe
 
 ## The Problem
 
-Wheat sown late can reach grain filling during hotter weather, and that hurts the crop. Many farmers have to delay sowing because the previous crop is still in the field. A single calendar date for the whole country can't show how much risk that delay adds in *their* district.
+Wheat is Pakistan's most important staple crop, and when it is sown matters. Wheat sown late can reach grain filling during hotter weather, which puts the crop under heat stress.
+
+Today, most farmers decide their sowing date from general knowledge: what they did last year, what neighbors do, or a fixed calendar. Many also have to delay sowing because the previous crop is still in the field, and they have no way to see how much extra heat risk that delay adds.
+
+There is no district-level tool that lets a farmer or advisor compare sowing dates for their own area. A single national calendar ignores the fact that Faisalabad, Multan and Hyderabad have different weather, and a warming, less predictable climate makes fixed dates even less reliable.
+
+SowSmart fills this gap for the major wheat-producing districts of Punjab and Sindh, replacing guesswork with evidence from local weather history.
 
 ## Our Solution
 
@@ -59,7 +65,32 @@ flowchart LR
 | Urdu / Roman Urdu helper | Offline fact-based responses, with optional Anthropic, Gemini or Groq support |
 | Data formats | CSV and JSON |
 
-## How to Run
+
+## Repository Guide
+
+| Path | What it does |
+| --- | --- |
+| `app.py` | Streamlit dashboard |
+| `results.json` | Precomputed district results used by the dashboard |
+| `sowing_model.py` | Crop growth and stress simulation |
+| `advisor.py` | Batch analysis and research outputs |
+| `wheat-advisor/` | Weather download, Urdu helper, yield data, calibration notes |
+| `forecasts/` | Saved forecast snapshots |
+
+## Impact and SDG Alignment
+
+- **SDG 2: Zero Hunger** by making climate-related wheat sowing risk easier to explore.
+- **SDG 13: Climate Action** by helping users examine historical heat exposure and warming scenarios.
+- **SDG 9: Industry, Innovation and Infrastructure** by applying accessible data tools to a practical agricultural challenge.
+- **SDG 8: Decent Work and Economic Growth** Better sowing decisions helps support more stable and productive farm work and income.
+
+*These are the areas SowSmart is designed to contribute to, not measured impact claims or an official SDG certification.*
+
+## Scope
+
+SowSmart is a prototype that estimates **weather stress**, not yield, income or crop loss. It uses district-center weather for 8 irrigated-plains districts and does not model irrigation, variety or fertilizer. Past patterns are not a forecast for this season. It is a tool to support the sowing-date conversation between farmers and advisors.
+
+## How to Run Locally
 
 Needs Python 3.10+. No API key or data download required.
 
@@ -86,28 +117,6 @@ Then open **http://localhost:8501**.
 > If PowerShell blocks activation, run `.\.venv\Scripts\python.exe -m streamlit run app.py` instead.
 > To test the Urdu helper offline: `python test_urdu.py simple`
 
-## Repository Guide
-
-| Path | What it does |
-| --- | --- |
-| `app.py` | Streamlit dashboard |
-| `results.json` | Precomputed district results used by the dashboard |
-| `sowing_model.py` | Crop growth and stress simulation |
-| `advisor.py` | Batch analysis and research outputs |
-| `wheat-advisor/` | Weather download, Urdu helper, yield data, calibration notes |
-| `forecasts/` | Saved forecast snapshots |
-
-## Impact and SDG Alignment
-
-- **SDG 2: Zero Hunger** by making climate-related wheat sowing risk easier to explore.
-- **SDG 13: Climate Action** by helping users examine historical heat exposure and warming scenarios.
-- **SDG 9: Industry, Innovation and Infrastructure** by applying accessible data tools to a practical agricultural challenge.
-
-*These are the areas SowSmart is designed to contribute to, not measured impact claims or an official SDG certification.*
-
-## Scope
-
-SowSmart is a prototype that estimates **weather stress**, not yield, income or crop loss. It uses district-center weather for 8 irrigated-plains districts and does not model irrigation, variety or fertilizer. Past patterns are not a forecast for this season. It is a tool to support the sowing-date conversation between farmers and advisors.
 
 ## Team
 
