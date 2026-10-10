@@ -1,3 +1,13 @@
+"""Root entry point for Person C's advisor module.
+
+The working project lives in ./wheat-advisor, where results.json is stored.
+This wrapper loads that implementation so imports from the repo root also work.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import os
 import json
 import sys
 from pathlib import Path

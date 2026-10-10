@@ -11,16 +11,48 @@ key is unavailable, ask() returns a safe Urdu answer from the supplied facts.
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import re
+import uuid
 import urllib.error
 import urllib.request
+import wave
 from difflib import get_close_matches
 from typing import Any
 
-MODEL = os.environ.get("ADVISOR_MODEL", "claude-sonnet-5-5")
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_project_env() -> None:
+    env_path = os.path.join(HERE, os.pardir, ".env")
+    if not os.path.isfile(env_path):
+        return
+
+    with open(env_path, encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name = name.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ.setdefault(name, value)
+
+
+_load_project_env()
+
+MODEL = os.environ.get("ADVISOR_MODEL", "claude-sonnet-5-5")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_TRANSCRIPTION_MODEL = os.environ.get(
+    "GEMINI_TRANSCRIPTION_MODEL", GEMINI_MODEL
+)
+GEMINI_TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
+GEMINI_TTS_VOICE = os.environ.get("GEMINI_TTS_VOICE", "Kore")
 
 URDU_MONTHS = {
     1: "جنوری",
@@ -78,6 +110,19 @@ OUT_OF_SCOPE = (
     "variety",
 )
 
+OUT_OF_SCOPE_URDU = (
+    "کھاد",
+    "بیج",
+    "آبپاشی",
+    "پانی",
+    "پیسٹی سائیڈ",
+    "سپرے",
+    "پیداوار",
+    "آمدنی",
+    "منافع",
+    "قسم",
+)
+
 FORECAST_WORDS = (
     "is saal",
     "this year",
@@ -87,7 +132,10 @@ FORECAST_WORDS = (
     "garmi zyada paregi",
 )
 
+FORECAST_WORDS_URDU = ("اس سال", "پیش گوئی", "موسم کیسا رہے گا", "پیداوار کتنی ہوگی")
+
 DESI_MONTHS = ("katak", "maghar", "poh", "desi month")
+DESI_MONTHS_URDU = ("مگھر", "پوہ", "دیسی مہینہ")
 
 
 def _has_urdu_text(text: str) -> bool:
@@ -179,6 +227,12 @@ def _needs_district() -> str:
 
 def _precheck_question(question: str, facts: dict[str, Any] | None = None) -> str | None:
     q = question.lower()
+    if any(w in question for w in FORECAST_WORDS_URDU):
+        return _forecast_refusal()
+    if any(w in question for w in OUT_OF_SCOPE_URDU):
+        return _refusal()
+    if any(w in question for w in DESI_MONTHS_URDU):
+        return _needs_english_date()
     if any(w in q for w in FORECAST_WORDS):
         return _forecast_refusal()
     if any(w in q for w in OUT_OF_SCOPE):
@@ -245,6 +299,14 @@ def _selected_provider() -> str:
     raise RuntimeError("Set GEMINI_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY")
 
 
+def gemini_configured() -> bool:
+    return bool(os.environ.get("GEMINI_API_KEY"))
+
+
+def groq_voice_configured() -> bool:
+    return bool(os.environ.get("GROQ_API_KEY"))
+
+
 def _get_client():
     global _client
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -270,6 +332,131 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeo
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"API request failed ({exc.code}): {body}") from exc
+
+
+def transcribe_audio(audio: bytes) -> str:
+    """Transcribe a recorded Urdu question with Groq Whisper."""
+    if not audio:
+        raise ValueError("No audio was provided.")
+
+    try:
+        with wave.open(io.BytesIO(audio), "rb") as recording:
+            duration_seconds = recording.getnframes() / recording.getframerate()
+    except (wave.Error, ZeroDivisionError) as exc:
+        raise ValueError("The recording is not a valid WAV audio file.") from exc
+    if duration_seconds > 30:
+        raise ValueError("Please keep voice questions under 30 seconds for a faster response.")
+
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("Voice questions require GROQ_API_KEY.")
+
+    model = (
+        os.environ.get("GROQ_TRANSCRIPTION_MODEL")
+        or os.environ.get("GROQ_MODEL")
+        or "whisper-large-v3-turbo"
+    )
+    boundary = uuid.uuid4().hex
+    fields = (
+        ("model", model),
+        ("language", "ur"),
+        ("response_format", "json"),
+    )
+    body_parts = []
+    for name, value in fields:
+        body_parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode("utf-8")
+        )
+    body_parts.extend(
+        (
+            (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="file"; filename="question.wav"\r\n'
+                "Content-Type: audio/wav\r\n\r\n"
+            ).encode("ascii"),
+            audio,
+            f"\r\n--{boundary}--\r\n".encode("ascii"),
+        )
+    )
+    request = urllib.request.Request(
+        "https://api.groq.com/openai/v1/audio/transcriptions",
+        data=b"".join(body_parts),
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30.0) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Groq transcription failed ({exc.code}): {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach Groq to transcribe the recording: {exc.reason}") from exc
+    except TimeoutError as exc:
+        raise RuntimeError("Groq transcription timed out after 30 seconds.") from exc
+
+    transcript = result.get("text")
+    if not isinstance(transcript, str) or not transcript.strip():
+        raise ValueError("Gemini returned an empty transcription.")
+    return transcript
+
+
+def synthesize_speech(text: str) -> bytes:
+    """Generate Urdu speech audio from an answer using Gemini TTS."""
+    if not text.strip():
+        raise ValueError("No answer text was provided.")
+
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("Read aloud requires GEMINI_API_KEY.")
+
+    result = _post_json(
+        "https://generativelanguage.googleapis.com/v1beta/interactions",
+        {
+            "model": GEMINI_TTS_MODEL,
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": text,
+                            "annotations": [
+                                {
+                                    "type": "speech_metadata",
+                                    "style": "Speak clearly and naturally in Urdu (Pakistan).",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "response_format": {"type": "audio"},
+            "generation_config": {
+                "speech_config": [{"voice": GEMINI_TTS_VOICE}]
+            },
+        },
+        {"x-goog-api-key": key},
+        timeout=60.0,
+    )
+
+    for step in reversed(result.get("steps", [])):
+        if step.get("type") != "model_output":
+            continue
+        for content in step.get("content", []):
+            if content.get("type") == "audio" and content.get("data"):
+                try:
+                    return base64.b64decode(content["data"], validate=True)
+                except (ValueError, TypeError) as exc:
+                    raise ValueError("Gemini returned invalid speech audio.") from exc
+    raise ValueError("Gemini returned no speech audio.")
 
 
 def _call_llm(system: str, user: str, max_tokens: int = 600) -> str:
@@ -303,9 +490,8 @@ def _call_llm(system: str, user: str, max_tokens: int = 600) -> str:
 
     if provider == "gemini":
         key = os.environ["GEMINI_API_KEY"]
-        model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
         data = _post_json(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
             {
                 "systemInstruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": [{"text": user}]}],
@@ -598,6 +784,9 @@ def _context_selection(context: str) -> tuple[str | None, str | None]:
 
 def _district_from_question(question: str, context: str = "") -> str | None:
     res = _load_results()
+    for district, urdu_name in URDU_DISTRICTS.items():
+        if district in res and urdu_name in question:
+            return district
     clean_question = _clean_key(question)
     for alias, district in DISTRICT_ALIASES.items():
         if alias in clean_question and district in res:
@@ -610,6 +799,9 @@ def _district_from_question(question: str, context: str = "") -> str | None:
 
 
 def _dates_from_question(question: str) -> list[str]:
+    question = question.translate(
+        str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+    )
     out = []
     for m in re.finditer(r"\b(\d{1,2})-(\d{1,2})\b", question):
         out.append(f"{int(m.group(1)):02d}-{int(m.group(2)):02d}")
@@ -624,6 +816,12 @@ def _dates_from_question(question: str) -> list[str]:
     }
     for m in re.finditer(r"\b(\d{1,2})\s+(october|oct|november|nov|december|dec)\b", question, re.I):
         out.append(f"{month_names[m.group(2).lower()]}-{int(m.group(1)):02d}")
+    urdu_months = {"اکتوبر": "10", "نومبر": "11", "دسمبر": "12"}
+    for month, number in urdu_months.items():
+        for m in re.finditer(rf"(?<!\w)(\d{{1,2}})\s*{month}", question):
+            out.append(f"{number}-{int(m.group(1)):02d}")
+        for m in re.finditer(rf"{month}\s*(\d{{1,2}})(?!\w)", question):
+            out.append(f"{number}-{int(m.group(1)):02d}")
     return out
 
 
@@ -656,6 +854,9 @@ def _local_agent_for_openai_style_provider(question: str, context: str) -> tuple
 
     out = run_tool(tool, args)
     calls.append({"tool": tool, "input": args, "output": out})
+    if _selected_provider() == "gemini":
+        return _answer_from_tool_result(tool, out), calls
+
     user = (
         "TOOL RESULT, the only numbers you may use:\n"
         + json.dumps(out, ensure_ascii=False)

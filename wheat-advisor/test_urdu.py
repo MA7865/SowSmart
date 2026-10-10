@@ -12,9 +12,13 @@ project can still be checked offline.
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import re
 import sys
+import wave
+from unittest.mock import patch
 
 import advisor
 
@@ -38,8 +42,74 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
+def mock_groq_transcription() -> bool:
+    advisor_globals = advisor.transcribe_audio.__globals__
+    captured: dict[str, object] = {}
+    sample = io.BytesIO()
+    with wave.open(sample, "wb") as recording:
+        recording.setnchannels(1)
+        recording.setsampwidth(2)
+        recording.setframerate(16000)
+        recording.writeframes(b"\x00\x00" * 8000)
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = request.data
+        captured["content_type"] = request.get_header("Content-type")
+        captured["authorization"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return io.BytesIO(json.dumps({"text": "ملتان میں بوائی کا سوال"}).encode("utf-8"))
+
+    with patch.dict(
+        os.environ,
+        {
+            "GROQ_API_KEY": "test-groq-key",
+            "GROQ_MODEL": "whisper-large-v3-turbo",
+            "GROQ_TRANSCRIPTION_MODEL": "",
+        },
+    ):
+        with patch.object(advisor_globals["urllib"].request, "urlopen", fake_urlopen):
+            transcript = advisor.transcribe_audio(sample.getvalue())
+
+    body = captured["body"]
+    return (
+        transcript == "ملتان میں بوائی کا سوال"
+        and captured["url"] == "https://api.groq.com/openai/v1/audio/transcriptions"
+        and captured["authorization"] == "Bearer test-groq-key"
+        and "multipart/form-data" in captured["content_type"]
+        and b"whisper-large-v3-turbo" in body
+        and b"audio/wav" in body
+        and captured["timeout"] == 30.0
+    )
+
+
 def run_simple() -> int:
     facts = advisor.facts_for("Multan", "11-28")
+
+    def gemini_answer(question: str):
+        advisor_globals = advisor.ask_agent.__globals__
+
+        def unexpected_model_call(*args, **kwargs):
+            raise AssertionError("Gemini question answering should use the local result")
+
+        with patch.dict(
+            advisor_globals,
+            {
+                "_selected_provider": lambda: "gemini",
+                "_call_llm": unexpected_model_call,
+            },
+        ):
+            return advisor.ask_agent(
+                question,
+                context=advisor.app_context("Faisalabad", "11-15"),
+            )
+
+    multan_answer, multan_calls = gemini_answer(
+        "Multan mein 28 November ko gandum bona kaisa rahega?"
+    )
+    urdu_multan_answer, urdu_multan_calls = gemini_answer(
+        "ملتان میں ۲۸ نومبر کو گندم کی بوائی کیسی رہے گی؟"
+    )
     cases = [
         ("Urdu script answer", lambda: has_urdu(advisor.ask(facts, "ملتان میں 28 نومبر کو گندم بونا کیسا رہے گا؟"))),
         ("Roman Urdu answered in Urdu", lambda: has_urdu(advisor.ask(facts, "Multan mein 28 November ko gandum bona kaisa rahega?"))),
@@ -47,6 +117,11 @@ def run_simple() -> int:
         ("Fallback has safest window", lambda: "سے" in advisor.fallback_answer(facts) and "تک" in advisor.fallback_answer(facts)),
         ("Fertilizer refusal", lambda: "کھاد" in advisor.ask(facts, "Gandum mein kitni khad dalni chahiye?")),
         ("Forecast refusal", lambda: "پیش گوئی" in advisor.ask(facts, "Is saal garmi zyada paregi? Kitni paidawar milegi?")),
+        ("Urdu fertilizer refusal", lambda: "کھاد" in advisor._precheck_question("گندم میں کتنی کھاد ڈالنی چاہیے؟", facts)),
+        ("Urdu district and date parsed", lambda: advisor._district_from_question("ملتان میں ۲۸ نومبر کو بوائی؟") == "Multan" and advisor._dates_from_question("ملتان میں ۲۸ نومبر کو بوائی؟") == ["11-28"]),
+        ("Groq voice transcription request uses configured model", mock_groq_transcription),
+        ("Roman Urdu district overrides selected district", lambda: multan_calls[0]["input"] == {"district": "Multan", "date": "11-28"} and "ملتان" in multan_answer and "فیصل آباد" not in multan_answer),
+        ("Urdu-script question uses its district and date", lambda: urdu_multan_calls[0]["input"] == {"district": "Multan", "date": "11-28"} and "ملتان" in urdu_multan_answer),
         ("Desi month asks for date", lambda: "انگریزی تاریخ" in advisor.ask(facts, "Maghar mein Sahiwal mein bijai theek rahegi?")),
         ("Wrong spelling district tool", lambda: advisor.run_tool("get_stress_for_date", {"district": "Faislabad", "date": "11-28"}).get("district") == "Faisalabad"),
         ("Unknown district handled", lambda: "districts" in advisor.run_tool("get_stress_for_date", {"district": "Lahore", "date": "11-28"})),
