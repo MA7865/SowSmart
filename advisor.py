@@ -143,6 +143,7 @@ def main():
         summary_rows.append(
             {
                 "district": name,
+                "province": province,
                 "gdd_total": cfg.gdd_total,
                 "median_days_to_maturity": summary[
                     "median_days_to_maturity"
@@ -151,6 +152,7 @@ def main():
                 "median_latest_ok_date": summary["median_latest_ok"],
                 "pct_edge": summary["pct_edge"],
                 "pct_ties": summary["pct_ties"],
+                "phenology_ok": summary["phenology_ok"],
             }
         )
 
@@ -168,8 +170,15 @@ def main():
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
+    summary_table = pd.DataFrame(summary_rows)
+    summary_table.to_csv(RESULTS_DIR / "eight_district_summary.csv", index=False)
     print("\nDistrict summary")
-    print(pd.DataFrame(summary_rows).to_string(index=False, float_format="%.1f"))
+    print(summary_table.to_string(index=False, float_format="%.1f"))
+    flagged = summary_table.loc[
+        (summary_table["pct_edge"] > 30) | ~summary_table["phenology_ok"]
+    ]
+    print("\nFlags (pct_edge > 30% or phenology_ok is False)")
+    print("none" if flagged.empty else flagged.to_string(index=False, float_format="%.1f"))
     print(f"\nSaved results to {output_path}")
     print(f"Saved per-year and scenario CSV files to {RESULTS_DIR}")
 
