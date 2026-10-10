@@ -1,5 +1,5 @@
-import base64
-import html
+from pathlib import base64
+import Path
 import json
 import os
 from pathlib import Path
@@ -181,7 +181,11 @@ def save_urdu_answer(question):
 def show_saved_urdu_answer():
     error = st.session_state.get("urdu_error")
     if error:
-        st.error(f"Could not answer this question: {error}")
+        show_bilingual(
+            f"Could not answer this question: {error}",
+            f"اس سوال کا جواب نہیں دے سکے۔ تفصیل: {error}",
+            style="error",
+        )
     answer = st.session_state.get("urdu_answer")
     if not answer:
         return
@@ -191,30 +195,44 @@ def show_saved_urdu_answer():
         f"<div class='urdu'>{safe_answer}</div>",
         unsafe_allow_html=True,
     )
-    if st.button("Read answer aloud"):
+    if st.button(bilingual_label("Read answer aloud", "جواب بلند آواز میں سنیں")):
         if advisor is None or not hasattr(advisor, "synthesize_speech"):
-            st.error("Gemini speech generation is unavailable because the advisor module is not connected.")
+            show_bilingual(
+                "Gemini speech generation is unavailable because the advisor module is not connected.",
+                "ایڈوائزر ماڈیول منسلک نہیں، اس لیے Gemini سے آواز بنانا دستیاب نہیں۔",
+                style="error",
+            )
         else:
             try:
-                with st.spinner("Generating Urdu speech..."):
+                with st.spinner(bilingual_label("Generating Urdu speech...", "اردو آواز تیار ہو رہی ہے...")):
                     st.session_state["urdu_speech_audio"] = advisor.synthesize_speech(answer)
                     st.session_state["urdu_speech_text"] = answer
             except Exception as exc:
-                st.error(f"Could not generate speech: {exc}")
+                show_bilingual(
+                    f"Could not generate speech: {exc}",
+                    f"آواز تیار نہیں ہو سکی۔ تفصیل: {exc}",
+                    style="error",
+                )
     if (
         st.session_state.get("urdu_speech_text") == answer
         and st.session_state.get("urdu_speech_audio")
     ):
         st.audio(st.session_state["urdu_speech_audio"], format="audio/wav")
     if calls:
-        with st.expander("How the helper got its numbers (tool calls)"):
+        with st.expander(bilingual_label("How the helper got its numbers (tool calls)", "مددگار نے اعداد کیسے حاصل کیے؟")):
             st.json(calls)
-    st.caption(
+    show_bilingual(
         "The helper only uses numbers from this tool. It does not give advice on seed, "
-        "fertilizer, irrigation or pesticides."
+        "fertilizer, irrigation or pesticides.",
+        "مددگار صرف اس آلے کے اعداد استعمال کرتا ہے۔ یہ بیج، کھاد، آبپاشی یا کیڑے مار ادویات کے بارے میں مشورہ نہیں دیتا۔",
+        style="caption",
     )
     if not calls:
-        st.caption("The helper returned a plain fallback answer without tool-call metadata.")
+        show_bilingual(
+            "The helper returned a plain fallback answer without tool-call metadata.",
+            "مددگار نے ٹول کی تفصیل کے بغیر ایک سادہ متبادل جواب دیا ہے۔",
+            style="caption",
+        )
 
 
 # ---------------- styles ----------------
@@ -276,24 +294,39 @@ st.caption(
 )
 
 # ---------------- map ----------------
-map_df = pd.DataFrame([
-    {"district": k, "lat": v["lat"], "lon": v["lon"]} for k, v in res.items()
-])
+map_rows = []
+
+for model_name, model_data in latest_results.items():
+    coordinate_name = model_name.replace("_", " ")
+
+    if coordinate_name not in res:
+        st.error(f"Missing map coordinates for {coordinate_name}.")
+        st.stop()
+
+    median_date = model_data["summary"]["median"]
+    selected_day = pd.to_datetime(
+        f"{median_date} 2001",
+        format="%d %b %Y",
+    ).dayofyear
+
+    map_rows.append(
+        {
+            "district": coordinate_name,
+            "lat": res[coordinate_name]["lat"],
+            "lon": res[coordinate_name]["lon"],
+            "median_selected_day": selected_day,
+            "recommended_range": (
+                f'{model_data["summary"]["p10"]} to '
+                f'{model_data["summary"]["p90"]}'
+            ),
+        }
+    )
+
+map_df = pd.DataFrame(map_rows)
+
 try:
     import plotly.express as px
 
-    mdf = pd.DataFrame(
-        [
-            {
-                "district": k,
-                "lat": v["lat"],
-                "lon": v["lon"],
-                "best_day_number": v["labels"].index(v["best"]),
-                "best": v["best"],
-            }
-            for k, v in res.items()
-        ]
-    )
     fig = px.scatter_mapbox(
         map_df,
         lat="lat",
@@ -312,7 +345,7 @@ try:
     fig.update_traces(marker={"size": 16})
     fig.update_layout(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        coloraxis_colorbar_title="Best day",
+        coloraxis_colorbar_title=bilingual_label("Median date (day of year)", "بہترین دن"),
     )
     st.plotly_chart(fig, use_container_width=True)
 except Exception:
@@ -343,14 +376,7 @@ facts = {
     "backtest_2022": d["backtest_2022"],
 }
 
-tab_names = [
-    "Latest model",
-    "Advisor",
-    "2022 check",
-    "25-year drift",
-    "Ask in Urdu",
-    bilingual_label("Limits", "حدود"),
-]
+tab_names = ["Latest model",  bilingual_label("Advisor", "رہنما"),  bilingual_label("25-year drift", "25 سالہ رجحان"), bilingual_label("Ask in Urdu", "اردو میں پوچھیں"), bilingual_label("Limits", "حدود")]
 if ml is not None:
     tab_names.insert(4, bilingual_label("Satellite check", "سیٹلائٹ کا جائزہ"))
 tabs = dict(zip(tab_names, st.tabs(tab_names)))
@@ -454,105 +480,203 @@ with tabs["Latest model"]:
         "warm columns are model quantities, not observed yield losses."
     )
 
-
 # ---------------- Advisor tab ----------------
 with tabs["Advisor"]:
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Safest window", f"{d['window_start']} to {d['window_end']}")
-    m2.metric("Best day", d["best"])
-    m3.metric("Your date: extra stress vs best", f"{your - best:+.1f}")
-    st.caption("Stress = heat days in grain filling + 2 x frost days + 2 x days of late maturity. Lower is safer.")
-    if d.get("edge_warning"):
-        st.warning("The best date is at the edge of the tested range for this district. Treat with care.")
-
-    st.subheader("Stress by sowing date (average of 25 years)")
-    st.line_chart(pd.DataFrame({"stress": d["mean_curve"]}, index=d["labels"]))
-
-    st.subheader("What if I sow earlier or later?")
-    shift = st.slider("Move my sowing date by (days)", -30, 30, 0)
-    k = max(0, min(len(d["labels"]) - 1, i + shift))
-    st.write(
-        f"Sowing on **{d['labels'][k]}**: stress {d['mean_curve'][k]:.1f} "
-        f"(your chosen date: {your:.1f}, change {d['mean_curve'][k] - your:+.1f})."
-    )
+    st.header("Sowing-date advisor")
     st.caption(
-        f"Share of past years in which the best day was within tolerance of that year's best: "
-        f"{d['share_of_years_ok']:.0%}. This is not a forecast probability."
+        "The selected date is simulated with the newer model across historical "
+        "weather. It is not a forecast for the current season."
     )
 
-# ---------------- 2022 tab ----------------
-with tabs["2022 check"]:
-    b = d["backtest_2022"]
-    st.write(
-        f"At the standard sowing date (15 Nov), the 2022 season had "
-        f"**{b['heat_days_std_sowing']} heat days** in grain filling in {district}. "
-        f"That is hotter than about **{b['percentile_hot_year']}%** of seasons from 2001 to 2021."
+    advisor_district = st.selectbox(
+        "District",
+        sorted(latest_results),
+        format_func=lambda name: name.replace("_", " "),
+        key="advisor_district",
     )
-    st.subheader("Heat days in 2022 by sowing date (simulation)")
-    hd = b["heat_days_by_sowing_date"]
-    st.bar_chart(pd.DataFrame({"heat days": list(hd.values())}, index=list(hd.keys())))
-    st.caption("A simulation check, not proof of crop losses.")
-    st.subheader("All districts")
+
+    province = DISTRICT_PROVINCE[advisor_district]
+    window_start, window_end = WINDOWS[province]
+    available_dates = [
+        date.strftime("%m-%d")
+        for date in pd.date_range(
+            f"2001-{window_start}",
+            f"2001-{window_end}",
+        )
+    ]
+    default_date = "11-15" if "11-15" in available_dates else available_dates[0]
+
+    sow_mmdd = st.selectbox(
+        "Date to simulate (month-day)",
+        available_dates,
+        index=available_dates.index(default_date),
+        key="advisor_sowing_date",
+    )
+
+    weather_path = (
+        APP_DIR
+        / "wheat-advisor"
+        / "cache"
+        / f"{advisor_district}.csv"
+    )
+
+    if not weather_path.is_file():
+        st.error(f"Weather file was not found: {weather_path}")
+        st.stop()
+
+    selected_date_results = calculate_selected_date_results(
+        str(weather_path),
+        weather_path.stat().st_mtime,
+        advisor_district,
+        sow_mmdd,
+    )
+
+    yearly_path = LATEST_YEARLY_DIR / f"{advisor_district}_per_year.csv"
+    if not yearly_path.is_file():
+        st.error(f"Yearly results file was not found: {yearly_path}")
+        st.stop()
+
+    advisor_yearly = load_versioned_csv(
+        str(yearly_path),
+        yearly_path.stat().st_mtime,
+    )
+
+    best_results = advisor_yearly[["year", "best_date", "score"]].rename(
+        columns={"score": "best_score"}
+    )
+    comparison = selected_date_results[
+        ["year", "score", "heat", "warm", "frost", "late_days", "maturity"]
+    ].merge(
+        best_results,
+        on="year",
+        how="inner",
+        validate="one_to_one",
+    )
+
+    if comparison.empty:
+        st.warning("There are no matching historical seasons to compare.")
+        st.stop()
+
+    comparison["extra_stress_vs_best"] = (
+        comparison["score"] - comparison["best_score"]
+    )
+
+    summary = latest_results[advisor_district]["summary"]
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Date being simulated", sow_mmdd)
+    col2.metric("Median model-selected date", summary["median"])
+    col3.metric(
+        "Median extra stress vs. each year's selected date",
+        f'{comparison["extra_stress_vs_best"].median():+.2f}',
+    )
+
+    st.caption(
+        f'Historical model-selected dates range from {summary["p10"]} to '
+        f'{summary["p90"]} for the middle 80% of years. '
+        "This is a historical date distribution, not a guaranteed safe window."
+    )
+
+    st.subheader("Stress score by historical year")
+    st.line_chart(
+        comparison.set_index("year")[["score", "best_score"]],
+        alt="New-model stress for the chosen date compared with each year's model-selected date",
+    )
+
     st.dataframe(
-        pd.DataFrame(
-            {
-                k: {
-                    "Heat days at 15 Nov sowing (2022)": v["backtest_2022"]["heat_days_std_sowing"],
-                    "Hotter than % of earlier years": v["backtest_2022"]["percentile_hot_year"],
-                }
-                for k, v in res.items()
-            }
-        ).T
+        comparison[
+            [
+                "year",
+                "best_date",
+                "score",
+                "best_score",
+                "extra_stress_vs_best",
+                "heat",
+                "warm",
+                "frost",
+                "late_days",
+                "maturity",
+            ]
+        ],
+        hide_index=True,
+    )
+
+    st.caption(
+        "Stress scores and components are model simulations, not observed "
+        "yield loss or proof of crop damage."
     )
 
 # ---------------- drift tab ----------------
 with tabs["25-year drift"]:
-    st.write("Has the best sowing date moved over 25 years? Positive numbers mean later.")
-    rows = {}
-    for k_, v in res.items():
-        p_value = v.get("drift_p_value")
-        if p_value is None:
-            verdict = "not enough information"
-        else:
-            verdict = "clear shift" if p_value < 0.05 else "no clear shift"
-        rows[k_] = {
-            "Days per decade": v["drift_days_per_decade"],
-            "p-value": p_value if p_value is not None else "n/a",
-            "Verdict": verdict,
-        }
-    st.dataframe(pd.DataFrame(rows).T)
-    st.caption("A p-value above 0.05 means we cannot say the date moved. A null p-value means the trend could not be tested in this dataset.")
+    st.write(
+        "Descriptive trend in the newer model's selected sowing dates. "
+        "Positive values mean later dates relative to November 1."
+    )
 
+    rows = []
+
+    for district_name in sorted(latest_results):
+        yearly_path = LATEST_YEARLY_DIR / f"{district_name}_per_year.csv"
+
+        if not yearly_path.is_file():
+            st.error(f"Yearly results file was not found: {yearly_path}")
+            st.stop()
+
+        district_yearly = load_versioned_csv(
+            str(yearly_path),
+            yearly_path.stat().st_mtime,
+        ).sort_values("year")
+
+        years = pd.to_numeric(district_yearly["year"], errors="raise")
+        best_dates = pd.to_datetime(district_yearly["best_date"])
+        nov_first = pd.to_datetime(years.astype(str) + "-11-01")
+        days_from_november = (best_dates - nov_first).dt.days
+
+        slope_days_per_decade = (
+            np.polyfit(
+                years.to_numpy(dtype=float),
+                days_from_november.to_numpy(dtype=float),
+                1,
+            )[0]
+            * 10
+        )
+
+        rows.append(
+            {
+                "District": district_name.replace("_", " "),
+                "Years": len(district_yearly),
+                "First model-selected date": best_dates.iloc[0].date(),
+                "Last model-selected date": best_dates.iloc[-1].date(),
+                "Descriptive change (days/decade)": round(
+                    slope_days_per_decade, 2
+                ),
+            }
+        )
+
+    st.dataframe(pd.DataFrame(rows), hide_index=True)
+    st.caption(
+        "This is a descriptive trend, not a statistical significance test "
+        "or a forecast."
+    )
 # ---------------- Urdu tab ----------------
 with tabs["Ask in Urdu"]:
     st.write("Ask in Urdu or Roman Urdu, for example: Multan mein 28 November ko gandum bona kaisa rahega?")
     q = st.text_input("Your question")
     if st.button("Ask") and q.strip():
-        save_urdu_answer(q)
-
-    st.divider()
-    st.subheader("Ask by voice")
-    st.caption(
-        "Record a short question (30 seconds or less) in Urdu or Roman Urdu. When you choose “Transcribe and ask,” "
-        "the recording is sent to Groq for transcription and is not saved by this app. "
-        "Read-aloud audio is also generated by Gemini when requested."
-    )
-    voice_audio = st.audio_input("Record your question", sample_rate=16000)
-    groq_ready = advisor is not None and advisor.groq_voice_configured()
-    if not groq_ready:
-        st.info("Voice questions require GROQ_API_KEY in the project .env file.")
-    if st.button("Transcribe and ask", disabled=voice_audio is None or not groq_ready):
-        if advisor is None or not hasattr(advisor, "transcribe_audio"):
-            st.error("Voice transcription is unavailable because the advisor module is not connected.")
-        else:
-            try:
-                with st.spinner("Transcribing your question with Groq..."):
-                    transcript = advisor.transcribe_audio(voice_audio.getvalue())
-                st.markdown(f"**Recognized question:** {transcript}")
-                save_urdu_answer(transcript)
-            except Exception as exc:
-                st.error(f"Could not transcribe the recording: {exc}")
-    show_saved_urdu_answer()
+        context = (
+            f"The user selected district={district} and sowing date={sow} in the app. "
+            f"Use these only if the question does not name a district or date."
+        )
+        answer, calls = get_answer(q, context)
+        st.markdown(f"<div class='urdu'>{answer.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
+        if calls:
+            with st.expander("How the helper got its numbers (tool calls)"):
+                st.json(calls)
+        st.caption(
+            "The helper only uses numbers from this tool. It does not give advice on seed, "
+            "fertilizer, irrigation or pesticides."
+        )
+        if not calls:
+            st.caption("The helper returned a plain fallback answer without tool-call metadata.")
 
 # ---------------- Satellite tab (only if D delivered ml_results.json) ----------------
 if ml is not None:
