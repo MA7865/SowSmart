@@ -1,0 +1,25 @@
+ .agents/skills/developing-with-streamlit           |    1 [32m+[m
+ .claude/skills/developing-with-streamlit           |    1 [32m+[m
+ advisor.py                                         |   18 [32m+[m
+ app.py                                             |  591 [32m++++++[m[31m---[m
+ results.json                                       |    1 [32m+[m
+ sowing_model.py                                    |   42 [32m+[m
+ wheat-advisor/advisor.py                           |  261 [32m++[m[31m--[m
+ wheat-advisor/results.json                         |    6 [32m+[m[31m-[m
+ wheat-advisor/results/Bahawalpur_date_scores.csv   | 1126 [32m++++++++++++++++++[m
+ wheat-advisor/results/Bahawalpur_sowing_dates.png  |  Bin [31m178963[m -> [32m176523[m bytes
+ wheat-advisor/results/Faisalabad_date_scores.csv   | 1126 [32m++++++++++++++++++[m
+ wheat-advisor/results/Faisalabad_sowing_dates.png  |  Bin [31m146008[m -> [32m142858[m bytes
+ wheat-advisor/results/Hyderabad_date_scores.csv    | 1251 [32m++++++++++++++++++++[m
+ wheat-advisor/results/Hyderabad_sowing_dates.png   |  Bin [31m132686[m -> [32m129957[m bytes
+ wheat-advisor/results/Larkana_date_scores.csv      | 1251 [32m++++++++++++++++++++[m
+ wheat-advisor/results/Larkana_sowing_dates.png     |  Bin [31m168385[m -> [32m164443[m bytes
+ wheat-advisor/results/Multan_date_scores.csv       | 1126 [32m++++++++++++++++++[m
+ wheat-advisor/results/Multan_sowing_dates.png      |  Bin [31m157067[m -> [32m151796[m bytes
+ .../results/Rahim_Yar_Khan_date_scores.csv         | 1126 [32m++++++++++++++++++[m
+ .../results/Rahim_Yar_Khan_sowing_dates.png        |  Bin [31m136048[m -> [32m131998[m bytes
+ wheat-advisor/results/Sahiwal_date_scores.csv      | 1126 [32m++++++++++++++++++[m
+ wheat-advisor/results/Sahiwal_sowing_dates.png     |  Bin [31m136238[m -> [32m138180[m bytes
+ wheat-advisor/results/Sargodha_date_scores.csv     | 1126 [32m++++++++++++++++++[m
+ wheat-advisor/results/Sargodha_sowing_dates.png    |  Bin [31m140306[m -> [32m137630[m bytes
+ 24 files changed, 9901 insertions(+), 278 deletions(-)
