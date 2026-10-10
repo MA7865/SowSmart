@@ -3,7 +3,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import theilslopes, kendalltau
+
+try:
+    from scipy.stats import theilslopes, kendalltau
+except ImportError:
+    theilslopes = None
+    kendalltau = None
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,7 +38,7 @@ LAST_SOW_YEAR = 2024
 
 
 def load(name):
-    """Load one district's daily weather."""
+    """Load one district's daily weather in the new model's schema."""
     path = CACHE_DIR / (name.replace(" ", "_") + ".csv")
 
     if not path.exists():
@@ -43,20 +48,25 @@ def load(name):
         )
 
     df = pd.read_csv(path, parse_dates=["time"])
-    df = df.sort_values("time").drop_duplicates("time")
-    df = df.set_index("time")
-
-    required = [
-        "temperature_2m_max",
-        "temperature_2m_min",
-        "precipitation_sum",
-    ]
-
-    missing = set(required) - set(df.columns)
+    required = {"time", "temperature_2m_max", "temperature_2m_min"}
+    missing = required - set(df.columns)
     if missing:
         raise ValueError(f"{name}: missing columns {missing}")
 
-    return df
+    weather = (
+        df.rename(
+            columns={
+                "time": "date",
+                "temperature_2m_max": "tmax",
+                "temperature_2m_min": "tmin",
+            }
+        )
+        .sort_values("date")
+        .drop_duplicates("date")
+        .set_index("date")[["tmax", "tmin"]]
+    )
+    weather.index.name = "date"
+    return weather
 
 
 def simulate(df, sow_date):
@@ -79,10 +89,10 @@ def simulate(df, sow_date):
     if len(dates) < 365:
         return None
 
-    tx = df["temperature_2m_max"].to_numpy(
+    tx = df["tmax"].to_numpy(
         dtype=float
     )[i:i + 365]
-    tn = df["temperature_2m_min"].to_numpy(
+    tn = df["tmin"].to_numpy(
         dtype=float
     )[i:i + 365]
 
@@ -154,11 +164,18 @@ def moving_avg(values, window=5):
         .rolling(window, center=True, min_periods=1)
         .mean()
         .to_numpy()
+        .copy()
     )
 
 
 def district_summary(df):
     """Calculate all summary fields for one district."""
+    if theilslopes is None or kendalltau is None:
+        raise RuntimeError(
+            "The legacy district_summary() requires SciPy, but SciPy could "
+            "not load in this environment. Use sowing_model.recommend()."
+        )
+
     years = list(range(FIRST_SOW_YEAR, LAST_SOW_YEAR + 1))
 
     sow_dates = list(

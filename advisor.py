@@ -1,104 +1,178 @@
 import json
-import os
-
-try:
-    import anthropic
-except Exception:  # pragma: no cover - optional dependency
-    anthropic = None
-
-SYSTEM = """You help Pakistani extension officers and farmers choose a wheat sowing date.
-Rules:
-- Use ONLY the numbers in the FACTS. Never invent numbers or facts.
-- Answer in simple Urdu (Urdu script). If the question is in Roman Urdu, still answer in Urdu script.
-- 3 to 5 short sentences.
-- Say this is based on the last 25 years of weather and a simulation, not a forecast.
-- Do NOT give advice about seed varieties, irrigation, fertilizer or pesticide.
-  If asked, say this tool cannot answer that and they should ask their extension officer.
-- If district or date is unclear, ask ONE short question.
-"""
-
-
-def _client():
-    if anthropic is None:
-        raise RuntimeError("anthropic package is not available")
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set")
-    return anthropic.Anthropic()
-
-
-def ask(facts: dict, question: str) -> str:
-    client = _client()
-    msg = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=600,
-        system=SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": "FACTS:\n"
-                + json.dumps(facts, ensure_ascii=False)
-                + "\n\nQUESTION:\n"
-                + question,
-            }
-        ],
-    )
-    return msg.content[0].text
-
-
-def fallback_answer(facts: dict) -> str:
-    district = facts.get("district", "district")
-    sowing = facts.get("chosen_sowing_date", "chosen date")
-    window = facts.get("safest_window", ["unknown", "unknown"])
-    best = facts.get("best_day", "unknown")
-    extra = facts.get("extra_stress_vs_best", 0)
-    share = facts.get("share_of_past_years_best_day_was_ok", 0)
-    if isinstance(share, (int, float)):
-        share_text = f"{share:.0%}"
-    else:
-        share_text = str(share)
-
-    return (
-        f"{district} کے لیے منتخب تاریخ {sowing} ہے۔ سب سے محفوظ دہلیز {window[0]} سے {window[1]} تک ہے، "
-        f"اور بہترین دن {best} ہے۔ آپ کی تاریخ کے لیے اضافی دباؤ {extra:+.1f} ہے، جبکہ پچھلے سالوں میں بہترین دن "
-        f"کافی حد تک مناسب رہا ہے۔ یہ اوسط کے مطابق 25 سال کے موسم کے اعداد و شمار پر مبنی ہے، نہ کہ موجودہ موسم کی پیش گوئی۔"
-    )
-
-
-def ask_agent(question: str, context: str | None = None, facts: dict | None = None):
-    if facts is None:
-        facts = {}
-    tool_calls = [
-        {
-            "tool": "sowing_risk_lookup",
-            "input": {"question": question, "context": context or "", "facts": facts},
-        }
-    ]
-    try:
-        answer = ask(facts, question)
-        return answer, tool_calls
-    except Exception:
-        return fallback_answer(facts), tool_calls
-"""Root entry point for Person C's advisor module.
-
-The working project lives in ./wheat-advisor, where results.json is stored.
-This wrapper loads that implementation so imports from the repo root also work.
-"""
-
-from __future__ import annotations
-
-import importlib.util
-import os
 import sys
+from pathlib import Path
 
-_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wheat-advisor", "advisor.py")
-_SPEC = importlib.util.spec_from_file_location("_wheat_advisor_impl", _PATH)
-if _SPEC is None or _SPEC.loader is None:
-    raise ImportError(f"cannot load advisor implementation from {_PATH}")
-_MOD = importlib.util.module_from_spec(_SPEC)
-sys.modules["_wheat_advisor_impl"] = _MOD
-_SPEC.loader.exec_module(_MOD)
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import pandas as pd
 
-for _name in dir(_MOD):
-    if not _name.startswith("__"):
-        globals()[_name] = getattr(_MOD, _name)
+from config import DISTRICT_PROVINCE, ModelConfig, WINDOWS
+from sowing_model import (
+    calibrate_gdd_total,
+    recommend,
+    scenario_table,
+    sensitivity,
+    summarize,
+)
+
+WHEAT_ADVISOR_DIR = Path(__file__).resolve().parent / "wheat-advisor"
+sys.path.insert(0, str(WHEAT_ADVISOR_DIR))
+import sim_core as sc
+
+
+YEARS = range(2000, 2025)
+RESULTS_DIR = WHEAT_ADVISOR_DIR / "results"
+PROVINCE_TARGET_DAYS = {
+    "punjab": 140,
+    "sindh": 128,
+}
+# Punjab ~140 d from Rehman et al. 2021 (Faisalabad), Sindh ~128 d from
+# Sial et al. 2005 (Tando Jam).
+
+
+def _json_value(value):
+    if isinstance(value, pd.Timestamp):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, dict):
+        return {str(k): _json_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_value(v) for v in value]
+    return value
+
+
+def _make_chart(name, rec, scenarios):
+    chart_rec = rec.copy()
+    for column in ("best_date", "ok_from", "ok_to"):
+        chart_rec[column] = pd.to_datetime(chart_rec[column])
+
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    years = chart_rec["year"].to_numpy()
+    ax.fill_between(
+        years,
+        chart_rec["ok_from"].dt.dayofyear,
+        chart_rec["ok_to"].dt.dayofyear,
+        color="#9ecae1",
+        alpha=0.55,
+        label="acceptable range",
+    )
+    ax.plot(
+        years,
+        chart_rec["best_date"].dt.dayofyear,
+        "o-",
+        color="#2171b5",
+        label="best date",
+    )
+    for scenario, color in (
+        ("+1.0C", "#e6550d"),
+        ("+2.0C", "#a63603"),
+        ("+3.0C", "#7f0000"),
+    ):
+        row = scenarios.loc[scenarios["scenario"] == scenario]
+        if not row.empty:
+            day = pd.to_datetime(
+                row.iloc[0]["median"], format="%d %b"
+            ).dayofyear
+            ax.axhline(
+                day,
+                color=color,
+                linestyle="--",
+                linewidth=1.5,
+                label=f"{scenario} median",
+            )
+
+    ax.set_title(f"{name}: wheat sowing recommendations by year")
+    ax.set_xlabel("Sowing year")
+    ax.set_ylabel("Calendar day of year")
+    ax.set_xticks(years[::2])
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(RESULTS_DIR / f"{name}_sowing_dates.png", dpi=150)
+    plt.close(fig)
+
+
+def main():
+    RESULTS_DIR.mkdir(exist_ok=True)
+    results = {}
+    summary_rows = []
+
+    for name in DISTRICT_PROVINCE:
+        print(f"\nProcessing {name}...")
+
+        weather = sc.load(name)
+        cfg = ModelConfig()
+        province = DISTRICT_PROVINCE[name]
+        cfg.gdd_total = calibrate_gdd_total(
+            weather,
+            sow_mmdd="11-18",
+            target_days=PROVINCE_TARGET_DAYS[province],
+            cfg=cfg,
+        )
+        window = WINDOWS[province]
+
+        rec = recommend(weather, window, cfg, years=YEARS)
+        if rec.empty:
+            raise ValueError(f"{name}: no usable season results were produced.")
+
+        summary = summarize(rec, window, cfg)
+        scenarios = scenario_table(weather, window, cfg)
+        fixed_sensitivity = sensitivity(
+            weather,
+            window,
+            cfg,
+            heat_thresholds=(33, 34, 35),
+            window_starts=("11-01",),
+            warm_weights=(0.1, 0.5, 1.0),
+        )
+        fixed_sensitivity.to_csv(
+            RESULTS_DIR / f"{name}_sensitivity_fixedwindow.csv",
+            index=False,
+        )
+        _make_chart(name, rec, scenarios)
+
+        rec.to_csv(RESULTS_DIR / f"{name}_per_year.csv", index=False)
+        scenarios.to_csv(RESULTS_DIR / f"{name}_scenarios.csv", index=False)
+
+        results[name] = {
+            "province": DISTRICT_PROVINCE[name],
+            "gdd_total": round(cfg.gdd_total, 2),
+            "summary": _json_value(summary),
+            "scenarios": _json_value(scenarios.to_dict(orient="records")),
+        }
+        summary_rows.append(
+            {
+                "district": name,
+                "gdd_total": cfg.gdd_total,
+                "median_days_to_maturity": summary[
+                    "median_days_to_maturity"
+                ],
+                "median_best_date": summary["median"],
+                "median_latest_ok_date": summary["median_latest_ok"],
+                "pct_edge": summary["pct_edge"],
+                "pct_ties": summary["pct_ties"],
+            }
+        )
+
+        print(f"{name}: calibrated gdd_total = {cfg.gdd_total:.0f}")
+        median_dates = pd.to_datetime(
+            fixed_sensitivity["median"], format="%d %b"
+        )
+        movement = int((median_dates.max() - median_dates.min()).days)
+        print(
+            f"  fixed-window sensitivity movement: {movement} days "
+            f"({median_dates.min():%d %b} to {median_dates.max():%d %b})"
+        )
+
+    output_path = WHEAT_ADVISOR_DIR / "results.json"
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+    print("\nDistrict summary")
+    print(pd.DataFrame(summary_rows).to_string(index=False, float_format="%.1f"))
+    print(f"\nSaved results to {output_path}")
+    print(f"Saved per-year and scenario CSV files to {RESULTS_DIR}")
+
+
+if __name__ == "__main__":
+    main()
