@@ -481,7 +481,7 @@ with tabs["Latest model"]:
     )
 
 # ---------------- Advisor tab ----------------
-with tabs["Advisor"]:
+with tabs[bilingual_label("Advisor", "رہنما")]:
     st.header("Sowing-date advisor")
     st.caption(
         "The selected date is simulated with the newer model across historical "
@@ -606,7 +606,7 @@ with tabs["Advisor"]:
     )
 
 # ---------------- drift tab ----------------
-with tabs["25-year drift"]:
+with tabs[bilingual_label("25-year drift", "25 سالہ رجحان")]:
     st.write(
         "Descriptive trend in the newer model's selected sowing dates. "
         "Positive values mean later dates relative to November 1."
@@ -658,7 +658,7 @@ with tabs["25-year drift"]:
         "or a forecast."
     )
 # ---------------- Urdu tab ----------------
-with tabs["Ask in Urdu"]:
+with tabs[bilingual_label("Ask in Urdu", "اردو میں پوچھیں")]:
     st.write("Ask in Urdu or Roman Urdu, for example: Multan mein 28 November ko gandum bona kaisa rahega?")
     q = st.text_input("Your question")
     if st.button("Ask") and q.strip():
