@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="wheat-advisor/logo.jpeg" alt="SowSmart Logo" width="250">
+  <img src="SowSmartLogo.jpg" alt="SowSmart Logo" width="250">
 </p>
 # 🌾 SowSmart
 
 **Find the safest day to sow wheat, using decades of local weather history.**
 
-SowSmart helps farmers and agricultural advisors in Punjab and Sindh compare wheat sowing dates across 8 districts and see how each date changes heat-stress risk.
+SowSmart helps farmers and agricultural advisors in Punjab and Sindh find the safest day to sow wheat. It replays decades of Open-Meteo weather history against different sowing dates across 8 districts, scores heat-stress risk, and explains results in Urdu and Roman Urdu. Built with Python and Streamlit.
 
 <!-- Add a screenshot or GIF of the dashboard here, e.g.: ![SowSmart dashboard](slides/screens/YOUR_IMAGE.png) -->
 
