@@ -33,6 +33,10 @@ OUT_JSON = os.path.join(advisor.HERE, "advice", "demo_answers.json")
 OUT_MD = os.path.join(advisor.HERE, "advice", "demo_answers.md")
 
 
+def has_live_key() -> bool:
+    return any(os.environ.get(k) for k in ("GEMINI_API_KEY", "GROQ_API_KEY", "ANTHROPIC_API_KEY"))
+
+
 def sha(path: str) -> str:
     with open(path, "rb") as f:
         return hashlib.sha1(f.read()).hexdigest()[:10]
@@ -51,8 +55,8 @@ def main() -> int:
     if not os.path.exists(RESULTS) or any(v.get("FAKE") for v in advisor._load_results().values()):
         print("Refusing to save demo answers: results.json is missing or fake.")
         return 1
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Refusing to save demo answers: ANTHROPIC_API_KEY is not set, so real agent answers cannot be generated.")
+    if not has_live_key():
+        print("Refusing to save demo answers: set GEMINI_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY first.")
         return 1
 
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)

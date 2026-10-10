@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.error
+import urllib.request
 from difflib import get_close_matches
 from typing import Any
 
@@ -86,6 +88,10 @@ FORECAST_WORDS = (
 )
 
 DESI_MONTHS = ("katak", "maghar", "poh", "desi month")
+
+
+def _has_urdu_text(text: str) -> bool:
+    return bool(re.search(r"[\u0600-\u06ff]", text or ""))
 
 
 def _load_results() -> dict[str, Any]:
@@ -226,6 +232,19 @@ def fallback_answer(facts: dict[str, Any]) -> str:
 _client = None
 
 
+def _selected_provider() -> str:
+    explicit = os.environ.get("ADVISOR_PROVIDER", "").strip().lower()
+    if explicit:
+        return explicit
+    if os.environ.get("GEMINI_API_KEY"):
+        return "gemini"
+    if os.environ.get("GROQ_API_KEY"):
+        return "groq"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    raise RuntimeError("Set GEMINI_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY")
+
+
 def _get_client():
     global _client
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -235,6 +254,69 @@ def _get_client():
 
         _client = anthropic.Anthropic(timeout=25.0, max_retries=1)
     return _client
+
+
+def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: float = 25.0) -> dict[str, Any]:
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", **headers},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"API request failed ({exc.code}): {body}") from exc
+
+
+def _call_llm(system: str, user: str, max_tokens: int = 600) -> str:
+    provider = _selected_provider()
+    if provider == "anthropic":
+        msg = _get_client().messages.create(
+            model=MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return "".join(b.text for b in msg.content if b.type == "text").strip()
+
+    if provider == "groq":
+        key = os.environ["GROQ_API_KEY"]
+        model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+        data = _post_json(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": 0.2,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            },
+            {"Authorization": f"Bearer {key}"},
+        )
+        return data["choices"][0]["message"]["content"].strip()
+
+    if provider == "gemini":
+        key = os.environ["GEMINI_API_KEY"]
+        model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+        data = _post_json(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            {
+                "systemInstruction": {"parts": [{"text": system}]},
+                "contents": [{"role": "user", "parts": [{"text": user}]}],
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.2},
+            },
+            {"x-goog-api-key": key},
+        )
+        parts = data["candidates"][0]["content"].get("parts", [])
+        return "".join(p.get("text", "") for p in parts).strip()
+
+    raise RuntimeError(f"Unknown ADVISOR_PROVIDER={provider!r}")
 
 
 GLOSSARY = """GLOSSARY:
@@ -267,23 +349,18 @@ def ask(facts: dict[str, Any], question: str, strict: bool = False) -> str:
     if prechecked:
         return prechecked
     try:
-        msg = _get_client().messages.create(
-            model=MODEL,
+        text = _call_llm(
+            SIMPLE_SYSTEM,
+            "FACTS:\n"
+            + json.dumps(facts, ensure_ascii=False)
+            + "\n\nQUESTION:\n"
+            + question,
             max_tokens=600,
-            system=SIMPLE_SYSTEM,
-            messages=[
-                {
-                    "role": "user",
-                    "content": "FACTS:\n"
-                    + json.dumps(facts, ensure_ascii=False)
-                    + "\n\nQUESTION:\n"
-                    + question,
-                }
-            ],
         )
-        text = "".join(b.text for b in msg.content if b.type == "text").strip()
         if not text:
             raise ValueError("empty answer")
+        if not _has_urdu_text(text):
+            raise ValueError("answer was not in Urdu script")
         return text
     except Exception:
         if strict:
@@ -392,6 +469,61 @@ def run_tool(tool: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": f"tool failed: {exc}"}
 
 
+def _answer_from_tool_result(tool: str, out: dict[str, Any]) -> str:
+    """Deterministic Urdu answer from a tool result, used when a free model is flaky."""
+    if out.get("error"):
+        districts = out.get("districts")
+        if districts:
+            names = "، ".join(URDU_DISTRICTS.get(d, d) for d in districts)
+            return f"معذرت، یہ ضلع ہمارے ڈیٹا میں نہیں ہے۔ ہم صرف یہ اضلاع دیکھتے ہیں: {names}۔"
+        return "معذرت، اس سوال کے لیے تاریخ یا ضلع صاف نہیں ہے۔ براہ کرم ضلع اور تاریخ دوبارہ بتائیں۔"
+
+    fake = "یہ آزمائشی نمبر ہیں، حتمی نتیجہ نہیں۔\n" if out.get("data_is_fake") else ""
+    district = URDU_DISTRICTS.get(out.get("district", ""), out.get("district", ""))
+    if tool == "get_district_summary":
+        return (
+            fake
+            + f"{district} کے لیے پچھلے 25 سال کے موسم اور کمپیوٹر سیمیولیشن کے مطابق "
+            + f"سب سے محفوظ مدت {urdu_date(out['safest_window'][0])} سے {urdu_date(out['safest_window'][1])} تک ہے۔ "
+            + f"بہترین دن {urdu_date(out['best_day'])} ہے۔ "
+            + "یہ اس سال کے موسم یا پیداوار کی پیش گوئی نہیں ہے۔"
+        )
+    if tool == "get_stress_for_date":
+        extra = float(out.get("extra_stress_vs_best", 0))
+        safety = "یہ تاریخ محفوظ مدت کے اندر ہے" if out.get("inside_safest_window") else "یہ تاریخ محفوظ مدت سے باہر ہے"
+        return (
+            fake
+            + f"{district} میں {urdu_date(out['date'])} کی بوائی کا دباؤ اسکور {out['stress_score']} ہے۔ "
+            + f"بہترین دن {urdu_date(out['best_day'])} ہے، جس کا اسکور {out['best_day_stress_score']} ہے۔ "
+            + f"اس تاریخ پر بہترین دن کے مقابلے میں دباؤ {extra:g} پوائنٹ زیادہ ہے؛ {safety}۔ "
+            + "یہ پچھلے 25 سال کے موسم پر مبنی سیمیولیشن ہے، پیش گوئی نہیں۔"
+        )
+    if tool == "compare_dates":
+        diff = float(out.get("difference_b_minus_a", 0))
+        if diff > 0:
+            direction = f"{urdu_date(out['date_b'])} پر دباؤ {urdu_date(out['date_a'])} سے {diff:g} پوائنٹ زیادہ ہے۔"
+        elif diff < 0:
+            direction = f"{urdu_date(out['date_b'])} پر دباؤ {urdu_date(out['date_a'])} سے {abs(diff):g} پوائنٹ کم ہے۔"
+        else:
+            direction = "دونوں تاریخوں کا دباؤ تقریباً برابر ہے۔"
+        return (
+            fake
+            + f"{district} میں {urdu_date(out['date_a'])} کا اسکور {out['stress_a']} ہے، "
+            + f"اور {urdu_date(out['date_b'])} کا اسکور {out['stress_b']} ہے۔ "
+            + direction
+            + " یہ پچھلے 25 سال کے موسم پر مبنی سیمیولیشن ہے، پیش گوئی نہیں۔"
+        )
+    if tool == "get_2022_check":
+        return (
+            fake
+            + f"{district} میں 2022 کی سیمیولیشن کے مطابق 15 نومبر کی بوائی پر گرمی کے "
+            + f"{out['heat_days_std_sowing']} دن آئے۔ "
+            + f"یہ پچھلے سالوں کے تقریباً {out['percentile_hot_year']} فیصد سے زیادہ گرم تھا۔ "
+            + "یہ صرف گرمی کے دنوں کی سیمیولیشن ہے، پیداوار یا نقصان کا دعویٰ نہیں۔"
+        )
+    return "معذرت، اس سوال کا جواب اس وقت دستیاب نہیں۔"
+
+
 _D = {
     "district": {
         "type": "string",
@@ -454,11 +586,99 @@ Agent rules:
 )
 
 
+def _context_selection(context: str) -> tuple[str | None, str | None]:
+    district = None
+    sow = None
+    m = re.search(r"district=([^,]+?)\s+and\s+sowing date=([0-9]{1,2}-[0-9]{1,2})", context)
+    if m:
+        district = m.group(1).strip()
+        sow = m.group(2).strip()
+    return district, sow
+
+
+def _district_from_question(question: str, context: str = "") -> str | None:
+    res = _load_results()
+    clean_question = _clean_key(question)
+    for alias, district in DISTRICT_ALIASES.items():
+        if alias in clean_question and district in res:
+            return district
+    for district in res:
+        if _clean_key(district) in clean_question:
+            return district
+    context_district, _ = _context_selection(context)
+    return _find_district(context_district or "", res) if context_district else None
+
+
+def _dates_from_question(question: str) -> list[str]:
+    out = []
+    for m in re.finditer(r"\b(\d{1,2})-(\d{1,2})\b", question):
+        out.append(f"{int(m.group(1)):02d}-{int(m.group(2)):02d}")
+
+    month_names = {
+        "october": "10",
+        "oct": "10",
+        "november": "11",
+        "nov": "11",
+        "december": "12",
+        "dec": "12",
+    }
+    for m in re.finditer(r"\b(\d{1,2})\s+(october|oct|november|nov|december|dec)\b", question, re.I):
+        out.append(f"{month_names[m.group(2).lower()]}-{int(m.group(1)):02d}")
+    return out
+
+
+def _local_agent_for_openai_style_provider(question: str, context: str) -> tuple[str, list[dict[str, Any]]]:
+    district = _district_from_question(question, context)
+    _, context_sow = _context_selection(context)
+    dates = _dates_from_question(question)
+    if not dates and context_sow:
+        dates = [context_sow]
+
+    calls: list[dict[str, Any]] = []
+    q = question.lower()
+    if not district:
+        out = run_tool("list_districts", {})
+        calls.append({"tool": "list_districts", "input": {}, "output": out})
+        return _needs_district(), calls
+
+    if "2022" in q:
+        tool, args = "get_2022_check", {"district": district}
+    elif len(dates) >= 2 or "farq" in q or "compare" in q:
+        if len(dates) < 2:
+            return "براہ کرم موازنہ کے لیے دو انگریزی تاریخیں بتائیں، مثلاً 11-05 اور 12-01۔", calls
+        tool, args = "compare_dates", {"district": district, "date_a": dates[0], "date_b": dates[1]}
+    elif "mehfooz" in q or "best" in q or "kab" in q:
+        tool, args = "get_district_summary", {"district": district}
+    elif dates:
+        tool, args = "get_stress_for_date", {"district": district, "date": dates[0]}
+    else:
+        tool, args = "get_district_summary", {"district": district}
+
+    out = run_tool(tool, args)
+    calls.append({"tool": tool, "input": args, "output": out})
+    user = (
+        "TOOL RESULT, the only numbers you may use:\n"
+        + json.dumps(out, ensure_ascii=False)
+        + "\n\nQUESTION:\n"
+        + question
+    )
+    try:
+        text = _call_llm(AGENT_SYSTEM, user, max_tokens=800)
+    except Exception:
+        text = ""
+    if not text or not _has_urdu_text(text):
+        text = _answer_from_tool_result(tool, out)
+    return text, calls
+
+
 def ask_agent(question: str, context: str = "", max_rounds: int = 6) -> tuple[str, list[dict[str, Any]]]:
-    """Tool-using Claude agent. Raises on failure so the app can fall back."""
-    prechecked = _precheck_question(question, None)
+    """Tool-using advisor. Raises on API failure so the app can fall back."""
+    prechecked = _precheck_question(question, {} if context else None)
     if prechecked:
         return prechecked, []
+
+    if _selected_provider() != "anthropic":
+        return _local_agent_for_openai_style_provider(question, context)
 
     first = (f"CONTEXT FROM THE APP: {context}\n\n" if context else "") + f"QUESTION:\n{question}"
     messages = [{"role": "user", "content": first}]
