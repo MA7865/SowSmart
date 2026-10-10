@@ -1,0 +1,5 @@
+scenario,median,p10,p90,pct_edge,median_heat,heat_at_ref_sowing
+baseline,05 Nov,01 Nov,10 Nov,32.0,0.0,2.5
++1.0C,09 Nov,01 Nov,14 Nov,28.000000000000004,0.0,1.2000000000000028
++2.0C,09 Nov,06 Nov,16 Nov,8.0,0.0,0.0
++3.0C,14 Nov,07 Nov,22 Nov,0.0,0.0,0.0

@@ -30,6 +30,11 @@ DISTRICT_PROVINCE = {
     "Multan": "punjab",
     "Hyderabad": "sindh",
     "Larkana": "sindh",
+    "Bahawalpur": "punjab",
+    "Faisalabad": "punjab",
+    "Rahim_Yar_Khan": "punjab",
+    "Sahiwal": "punjab",
+    "Sargodha": "punjab",
 }
 
 

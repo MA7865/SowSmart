@@ -181,5 +181,310 @@
         "heat_at_ref_sowing": 1.5999999999999943
       }
     ]
+  },
+  "Bahawalpur": {
+    "province": "punjab",
+    "gdd_total": 1996.95,
+    "summary": {
+      "n_years": 25,
+      "median": "05 Nov",
+      "median_latest_ok": "07 Nov",
+      "median_days_to_maturity": 143.0,
+      "phenology_ok": true,
+      "p10": "01 Nov",
+      "p90": "09 Nov",
+      "earliest": "01 Nov",
+      "latest": "14 Nov",
+      "pct_edge": 40.0,
+      "pct_ties": 16.0,
+      "median_heat": 0.3999999999999986,
+      "top_dates": {
+        "01 Nov": 0.32,
+        "06 Nov": 0.16,
+        "02 Nov": 0.08
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "baseline",
+        "median": "05 Nov",
+        "p10": "01 Nov",
+        "p90": "09 Nov",
+        "pct_edge": 40.0,
+        "median_heat": 0.3999999999999986,
+        "heat_at_ref_sowing": 11.399999999999999
+      },
+      {
+        "scenario": "+1.0C",
+        "median": "06 Nov",
+        "p10": "01 Nov",
+        "p90": "12 Nov",
+        "pct_edge": 32.0,
+        "median_heat": 0.3999999999999986,
+        "heat_at_ref_sowing": 8.399999999999999
+      },
+      {
+        "scenario": "+2.0C",
+        "median": "09 Nov",
+        "p10": "01 Nov",
+        "p90": "18 Nov",
+        "pct_edge": 20.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 6.000000000000007
+      },
+      {
+        "scenario": "+3.0C",
+        "median": "11 Nov",
+        "p10": "05 Nov",
+        "p90": "19 Nov",
+        "pct_edge": 4.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 4.200000000000003
+      }
+    ]
+  },
+  "Faisalabad": {
+    "province": "punjab",
+    "gdd_total": 1804.85,
+    "summary": {
+      "n_years": 25,
+      "median": "05 Nov",
+      "median_latest_ok": "11 Nov",
+      "median_days_to_maturity": 142.0,
+      "phenology_ok": true,
+      "p10": "01 Nov",
+      "p90": "10 Nov",
+      "earliest": "01 Nov",
+      "latest": "11 Nov",
+      "pct_edge": 32.0,
+      "pct_ties": 48.0,
+      "median_heat": 0.0,
+      "top_dates": {
+        "01 Nov": 0.2,
+        "05 Nov": 0.16,
+        "08 Nov": 0.12
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "baseline",
+        "median": "05 Nov",
+        "p10": "01 Nov",
+        "p90": "10 Nov",
+        "pct_edge": 32.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 2.5
+      },
+      {
+        "scenario": "+1.0C",
+        "median": "09 Nov",
+        "p10": "01 Nov",
+        "p90": "14 Nov",
+        "pct_edge": 28.000000000000004,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 1.2000000000000028
+      },
+      {
+        "scenario": "+2.0C",
+        "median": "09 Nov",
+        "p10": "06 Nov",
+        "p90": "16 Nov",
+        "pct_edge": 8.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 0.0
+      },
+      {
+        "scenario": "+3.0C",
+        "median": "14 Nov",
+        "p10": "07 Nov",
+        "p90": "22 Nov",
+        "pct_edge": 0.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 0.0
+      }
+    ]
+  },
+  "Rahim_Yar_Khan": {
+    "province": "punjab",
+    "gdd_total": 2146.2,
+    "summary": {
+      "n_years": 25,
+      "median": "02 Nov",
+      "median_latest_ok": "02 Nov",
+      "median_days_to_maturity": 144.0,
+      "phenology_ok": true,
+      "p10": "01 Nov",
+      "p90": "10 Nov",
+      "earliest": "01 Nov",
+      "latest": "19 Nov",
+      "pct_edge": 76.0,
+      "pct_ties": 0.0,
+      "median_heat": 1.4000000000000057,
+      "top_dates": {
+        "01 Nov": 0.4,
+        "03 Nov": 0.24,
+        "02 Nov": 0.12
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "baseline",
+        "median": "02 Nov",
+        "p10": "01 Nov",
+        "p90": "10 Nov",
+        "pct_edge": 76.0,
+        "median_heat": 1.4000000000000057,
+        "heat_at_ref_sowing": 22.500000000000007
+      },
+      {
+        "scenario": "+1.0C",
+        "median": "05 Nov",
+        "p10": "01 Nov",
+        "p90": "12 Nov",
+        "pct_edge": 44.0,
+        "median_heat": 1.7000000000000028,
+        "heat_at_ref_sowing": 19.39999999999999
+      },
+      {
+        "scenario": "+2.0C",
+        "median": "05 Nov",
+        "p10": "01 Nov",
+        "p90": "13 Nov",
+        "pct_edge": 36.0,
+        "median_heat": 0.4000000000000057,
+        "heat_at_ref_sowing": 14.199999999999996
+      },
+      {
+        "scenario": "+3.0C",
+        "median": "07 Nov",
+        "p10": "01 Nov",
+        "p90": "16 Nov",
+        "pct_edge": 40.0,
+        "median_heat": 0.4000000000000057,
+        "heat_at_ref_sowing": 12.599999999999994
+      }
+    ]
+  },
+  "Sahiwal": {
+    "province": "punjab",
+    "gdd_total": 1883.0,
+    "summary": {
+      "n_years": 25,
+      "median": "06 Nov",
+      "median_latest_ok": "09 Nov",
+      "median_days_to_maturity": 142.0,
+      "phenology_ok": true,
+      "p10": "01 Nov",
+      "p90": "10 Nov",
+      "earliest": "01 Nov",
+      "latest": "21 Nov",
+      "pct_edge": 24.0,
+      "pct_ties": 24.0,
+      "median_heat": 0.0,
+      "top_dates": {
+        "01 Nov": 0.16,
+        "08 Nov": 0.12,
+        "06 Nov": 0.12
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "baseline",
+        "median": "06 Nov",
+        "p10": "01 Nov",
+        "p90": "10 Nov",
+        "pct_edge": 24.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 6.70000000000001
+      },
+      {
+        "scenario": "+1.0C",
+        "median": "09 Nov",
+        "p10": "02 Nov",
+        "p90": "14 Nov",
+        "pct_edge": 20.0,
+        "median_heat": 0.30000000000000426,
+        "heat_at_ref_sowing": 2.700000000000003
+      },
+      {
+        "scenario": "+2.0C",
+        "median": "09 Nov",
+        "p10": "04 Nov",
+        "p90": "16 Nov",
+        "pct_edge": 8.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 2.4000000000000057
+      },
+      {
+        "scenario": "+3.0C",
+        "median": "13 Nov",
+        "p10": "05 Nov",
+        "p90": "20 Nov",
+        "pct_edge": 4.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 1.1000000000000014
+      }
+    ]
+  },
+  "Sargodha": {
+    "province": "punjab",
+    "gdd_total": 1726.7,
+    "summary": {
+      "n_years": 25,
+      "median": "05 Nov",
+      "median_latest_ok": "13 Nov",
+      "median_days_to_maturity": 142.0,
+      "phenology_ok": true,
+      "p10": "01 Nov",
+      "p90": "11 Nov",
+      "earliest": "01 Nov",
+      "latest": "13 Nov",
+      "pct_edge": 40.0,
+      "pct_ties": 56.00000000000001,
+      "median_heat": 0.0,
+      "top_dates": {
+        "01 Nov": 0.2,
+        "03 Nov": 0.12,
+        "07 Nov": 0.12
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "baseline",
+        "median": "05 Nov",
+        "p10": "01 Nov",
+        "p90": "11 Nov",
+        "pct_edge": 40.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 0.6000000000000014
+      },
+      {
+        "scenario": "+1.0C",
+        "median": "09 Nov",
+        "p10": "02 Nov",
+        "p90": "13 Nov",
+        "pct_edge": 16.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 0.6000000000000014
+      },
+      {
+        "scenario": "+2.0C",
+        "median": "11 Nov",
+        "p10": "06 Nov",
+        "p90": "18 Nov",
+        "pct_edge": 4.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 0.0
+      },
+      {
+        "scenario": "+3.0C",
+        "median": "14 Nov",
+        "p10": "09 Nov",
+        "p90": "23 Nov",
+        "pct_edge": 0.0,
+        "median_heat": 0.0,
+        "heat_at_ref_sowing": 0.0
+      }
+    ]
   }
 }
