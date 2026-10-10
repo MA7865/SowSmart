@@ -317,10 +317,10 @@ facts = {
     "backtest_2022": d["backtest_2022"],
 }
 
-tab_keys = ["Latest model", "Advisor", "25-year drift", "Ask in Urdu", "Limits"]
+tab_keys = ["Recommended dates", "Check My Date", "25-year drift", "Ask in Urdu", "Limits"]
 tab_names = [
-    bilingual_label("Latest model", "جدید ماڈل"),
-    bilingual_label("Advisor", "مشیر"),
+    bilingual_label("Recommended dates", "تجویز کردہ تاریخیں"),
+    bilingual_label("Check My Date", "میری تاریخ جانچیں"),
     bilingual_label("25-year drift", "25 سالہ رجحان"),
     bilingual_label("Ask in Urdu", "اردو میں پوچھیں"),
     bilingual_label("Limits", "حدود"),
@@ -332,7 +332,7 @@ tabs = dict(zip(tab_keys, st.tabs(tab_names)))
 
 
 # ---------------- Latest model tab ----------------
-with tabs["Latest model"]:
+with tabs["Recommended dates"]:
     show_bilingual("Latest wheat model", "جدید گندم ماڈل", style="header")
     st.caption(
         "These results come from the newer season-specific model. "
@@ -433,7 +433,7 @@ with tabs["Latest model"]:
     )
 
 # ---------------- Advisor tab ----------------
-with tabs["Advisor"]:
+with tabs["Check My Date"]:
     show_bilingual("Sowing-date advisor", "بوائی کی تاریخ کا مشیر", style="header")
     st.caption(
         "The selected date is simulated with the newer model across historical "
