@@ -1,0 +1,9 @@
+district,province,gdd_total,median_days_to_maturity,median_best_date,median_latest_ok_date,pct_edge,pct_ties,phenology_ok
+Multan,punjab,1923.3000000000006,142.0,05 Nov,08 Nov,20.0,32.0,True
+Hyderabad,sindh,2193.949999999999,130.0,05 Nov,05 Nov,36.0,4.0,True
+Larkana,sindh,1952.349999999999,130.0,07 Nov,08 Nov,20.0,12.0,True
+Bahawalpur,punjab,1996.9499999999994,143.0,05 Nov,07 Nov,40.0,16.0,True
+Faisalabad,punjab,1804.8499999999997,142.0,05 Nov,11 Nov,32.0,48.0,True
+Rahim_Yar_Khan,punjab,2146.199999999999,144.0,02 Nov,02 Nov,76.0,0.0,True
+Sahiwal,punjab,1883.0000000000005,142.0,06 Nov,09 Nov,24.0,24.0,True
+Sargodha,punjab,1726.7000000000007,142.0,05 Nov,13 Nov,40.0,56.00000000000001,True

@@ -5,3 +5,5 @@ plotly
 anthropic
 scipy
 requests
+matplotlib
+streamlit>=1.30
