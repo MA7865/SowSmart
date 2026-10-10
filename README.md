@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="wheat-advisor/logo.jpeg" alt="SowSmart Logo" width="250">
+</p>
 # 🌾 SowSmart
 
 **Find the safest day to sow wheat, using decades of local weather history.**
@@ -7,6 +10,7 @@ SowSmart helps farmers and agricultural advisors in Punjab and Sindh compare whe
 <!-- Add a screenshot or GIF of the dashboard here, e.g.: ![SowSmart dashboard](slides/screens/YOUR_IMAGE.png) -->
 
 **Links:** [Demo video](ADD_VIDEO_URL) · [Slides](ADD_PPT_URL) · [Documentation](ADD_DOCUMENTATION_URL)
+
 **SowSmart:** [SowSmart](https://sowsmart-itsnotabug-itsafeature.streamlit.app/) 
 ---
 
