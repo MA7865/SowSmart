@@ -7,7 +7,7 @@ SowSmart helps farmers and agricultural advisors in Punjab and Sindh compare whe
 <!-- Add a screenshot or GIF of the dashboard here, e.g.: ![SowSmart dashboard](slides/screens/YOUR_IMAGE.png) -->
 
 **Links:** [Demo video](ADD_VIDEO_URL) · [Slides](ADD_PPT_URL) · [Documentation](ADD_DOCUMENTATION_URL)
-
+**SowSmart:** [SowSmart](https://sowsmart-itsnotabug-itsafeature.streamlit.app/) 
 ---
 
 ## The Problem
@@ -42,6 +42,8 @@ flowchart LR
     D --> E[Date comparison and history checks]
     D --> F[Urdu / Roman Urdu helper]
 ```
+
+##Dashboard 
 
 ## Why It's Useful
 
