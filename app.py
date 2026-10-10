@@ -1,3 +1,4 @@
+import html
 import json
 import os
 
@@ -42,28 +43,77 @@ except Exception:
     advisor = None
 
 
-def get_answer(facts, question, context):
-    """Try the agent, then the simple helper, then the template. Returns (text, tool_calls)."""
+def get_answer(question, context):
+    """Return the advisor answer and tool calls, propagating failures to the UI."""
     if advisor is None:
-        return "The Urdu helper is not connected yet.", []
+        raise RuntimeError("The Urdu advisor module is not connected.")
     if hasattr(advisor, "ask_agent"):
-        try:
-            result = advisor.ask_agent(question, context=context, facts=facts)
-            if isinstance(result, tuple) and len(result) == 2:
-                return result
-            if isinstance(result, str):
-                return result, []
-        except Exception:
-            pass
+        result = advisor.ask_agent(question, context=context)
+        if isinstance(result, tuple) and len(result) == 2:
+            return result
+        if isinstance(result, str):
+            return result, []
+        raise TypeError("The Urdu advisor returned an unsupported response.")
+    raise RuntimeError("The Urdu advisor does not support questions.")
+
+
+def save_urdu_answer(question):
+    context = (
+        f"The user selected district={district} and sowing date={sow} in the app. "
+        "Use these only if the question does not name a district or date."
+    )
+    st.session_state["urdu_question"] = question
+    st.session_state.pop("urdu_answer", None)
+    st.session_state.pop("urdu_calls", None)
+    st.session_state.pop("urdu_error", None)
+    st.session_state.pop("urdu_speech_audio", None)
+    st.session_state.pop("urdu_speech_text", None)
     try:
-        result = advisor.ask(facts, question)
-        return result, []
-    except Exception:
-        pass
-    try:
-        return advisor.fallback_answer(facts), []
-    except Exception:
-        return "The helper is unavailable right now.", []
+        answer, calls = get_answer(question, context)
+    except Exception as exc:
+        st.session_state["urdu_error"] = str(exc)
+        return
+    st.session_state["urdu_answer"] = answer
+    st.session_state["urdu_calls"] = calls
+
+
+def show_saved_urdu_answer():
+    error = st.session_state.get("urdu_error")
+    if error:
+        st.error(f"Could not answer this question: {error}")
+    answer = st.session_state.get("urdu_answer")
+    if not answer:
+        return
+    calls = st.session_state.get("urdu_calls", [])
+    safe_answer = html.escape(answer).replace("\n", "<br>")
+    st.markdown(
+        f"<div class='urdu'>{safe_answer}</div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("Read answer aloud"):
+        if advisor is None or not hasattr(advisor, "synthesize_speech"):
+            st.error("Gemini speech generation is unavailable because the advisor module is not connected.")
+        else:
+            try:
+                with st.spinner("Generating Urdu speech..."):
+                    st.session_state["urdu_speech_audio"] = advisor.synthesize_speech(answer)
+                    st.session_state["urdu_speech_text"] = answer
+            except Exception as exc:
+                st.error(f"Could not generate speech: {exc}")
+    if (
+        st.session_state.get("urdu_speech_text") == answer
+        and st.session_state.get("urdu_speech_audio")
+    ):
+        st.audio(st.session_state["urdu_speech_audio"], format="audio/wav")
+    if calls:
+        with st.expander("How the helper got its numbers (tool calls)"):
+            st.json(calls)
+    st.caption(
+        "The helper only uses numbers from this tool. It does not give advice on seed, "
+        "fertilizer, irrigation or pesticides."
+    )
+    if not calls:
+        st.caption("The helper returned a plain fallback answer without tool-call metadata.")
 
 
 # ---------------- styles ----------------
@@ -72,11 +122,12 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap');
 html, body, [data-testid="stAppViewContainer"] {
-    background: linear-gradient(180deg, #07131f 0%, #0d1d2b 100%);
-    color: #f3f6fb;
+    background: linear-gradient(180deg, #f7faf4 0%, #edf3e9 100%);
+    color: #202820;
 }
 .stApp {
     background: transparent;
+    color: #202820;
 }
 .urdu {direction: rtl; text-align: right; font-family: 'Noto Nastaliq Urdu', serif;
        font-size: 22px; line-height: 2.2;}
@@ -238,21 +289,31 @@ with tabs["Ask in Urdu"]:
     st.write("Ask in Urdu or Roman Urdu, for example: Multan mein 28 November ko gandum bona kaisa rahega?")
     q = st.text_input("Your question")
     if st.button("Ask") and q.strip():
-        context = (
-            f"The user selected district={district} and sowing date={sow} in the app. "
-            f"Use these only if the question does not name a district or date."
-        )
-        answer, calls = get_answer(facts, q, context)
-        st.markdown(f"<div class='urdu'>{answer.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
-        if calls:
-            with st.expander("How the helper got its numbers (tool calls)"):
-                st.json(calls)
-        st.caption(
-            "The helper only uses numbers from this tool. It does not give advice on seed, "
-            "fertilizer, irrigation or pesticides."
-        )
-        if not calls:
-            st.caption("The helper returned a plain fallback answer without tool-call metadata.")
+        save_urdu_answer(q)
+
+    st.divider()
+    st.subheader("Ask by voice")
+    st.caption(
+        "Record a short question (30 seconds or less) in Urdu or Roman Urdu. When you choose “Transcribe and ask,” "
+        "the recording is sent to Groq for transcription and is not saved by this app. "
+        "Read-aloud audio is also generated by Gemini when requested."
+    )
+    voice_audio = st.audio_input("Record your question", sample_rate=16000)
+    groq_ready = advisor is not None and advisor.groq_voice_configured()
+    if not groq_ready:
+        st.info("Voice questions require GROQ_API_KEY in the project .env file.")
+    if st.button("Transcribe and ask", disabled=voice_audio is None or not groq_ready):
+        if advisor is None or not hasattr(advisor, "transcribe_audio"):
+            st.error("Voice transcription is unavailable because the advisor module is not connected.")
+        else:
+            try:
+                with st.spinner("Transcribing your question with Groq..."):
+                    transcript = advisor.transcribe_audio(voice_audio.getvalue())
+                st.markdown(f"**Recognized question:** {transcript}")
+                save_urdu_answer(transcript)
+            except Exception as exc:
+                st.error(f"Could not transcribe the recording: {exc}")
+    show_saved_urdu_answer()
 
 # ---------------- Satellite tab (only if D delivered ml_results.json) ----------------
 if ml is not None:

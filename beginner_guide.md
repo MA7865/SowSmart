@@ -12,12 +12,12 @@ Read **Part 1 and Part 2 first** (10 minutes). Then follow the steps in order. E
 1. "In the last 25 years, sowing on this date usually meant X hot days during grain filling."
 2. "The best date was around Y. Your date is Z days later, which means about N more hot days."
 3. "What happened in 2022 (a famous heatwave), and what sowing earlier would have changed, **in our simulation**."
-4. A helper (Claude) explains this in **Urdu**, and you can ask it questions in Urdu.
+4. A Gemini helper explains this in **Urdu**, and you can ask questions in Urdu or Roman Urdu.
 
 **How it works, in four boxes:**
 
 ```
-[1. Weather data]  ->  [2. Simulator]  ->  [3. Results file]  ->  [4. App + Claude in Urdu]
+[1. Weather data]  ->  [2. Simulator]  ->  [3. Results file]  ->  [4. App + Gemini in Urdu]
  (25 years, 8        (pretend to sow       (results.json:         (map, chart, Urdu
   districts)          on every date)        the numbers)           explanation)
 ```
@@ -36,7 +36,7 @@ Read **Part 1 and Part 2 first** (10 minutes). Then follow the steps in order. E
 | **Simulator** | A small program with simple rules that imitates how wheat grows with temperature. Not an AI model. |
 | **GDD (growing degree days)** | A way to measure crop "progress" using temperature. Warm days add more. When the total reaches a target, the crop is mature. |
 | **Backtest** | Using the past to check an idea. Example: "what would our advice have said in 2022?" |
-| **API** | A way for your program to ask another service for something (weather, or Claude's answer). |
+| **API** | A way for your program to ask another service for something (weather, or Gemini's answer). |
 | **API key** | A secret password for an API. Never put it in code you share. |
 | **CSV** | A table saved as a text file. |
 | **JSON** | A way to store data as text, like a labeled list. `results.json` is our results file. |
@@ -52,10 +52,10 @@ Read **Part 1 and Part 2 first** (10 minutes). Then follow the steps in order. E
 
 Be clear about this with yourselves and with the judges.
 
-- **Level 1 (the main plan, doable today):** a simulator plus a **Claude helper**. Claude reads your numbers, understands Urdu questions, and explains the results in Urdu. The core calculation is the simulator, not AI. That is fine, as long as you describe it truthfully.
+- **Level 1 (the main plan, doable today):** a simulator plus an AI helper. Gemini reads the supplied results, understands Urdu and Roman Urdu questions, and explains them in Urdu. The core calculation is the simulator, not AI. That is fine, as long as you describe it truthfully.
 - **Level 2 (optional, only if Level 1 is finished and working):** a small machine learning model trained on satellite greenness (NDVI) to check whether the simulator's heat-risk idea matches what satellites actually saw. This adds real "trained AI", but it is harder and may not work in one day.
 
-Say to judges: **"We built a heat-risk checker for sowing dates. Claude lets farmers and extension officers ask about it in Urdu. We also tested our assumptions against satellite data."** (Only say the last sentence if you finished Level 2.)
+Say to judges: **"We built a heat-risk checker for sowing dates. Gemini lets farmers and extension officers ask about it in Urdu. We also tested our assumptions against satellite data."** (Only say the last sentence if you finished Level 2.)
 
 ---
 
@@ -74,10 +74,10 @@ No. Never say yield. We estimate **heat exposure**, not how much wheat is harves
 No. It reflects the last 25 years. It is not a weather forecast for this year.
 
 **"The farmer speaks Urdu. How does that work?"**
-The farmer (or an extension officer) types a question in Urdu or Roman Urdu. Claude reads it, and your program passes Claude the numbers. Claude answers in Urdu. The simulator never sees Urdu.
+The farmer (or an extension officer) can type in Urdu or Roman Urdu, or record a spoken question. Groq transcribes voice questions; Gemini answers using the app's supplied results. Answers are displayed in Urdu, and Gemini can generate Urdu audio when the user selects **Read answer aloud**. The simulator never sees Urdu.
 
-**"What about voice?"**
-Skip it unless everything else is done. Typed Urdu is the guaranteed path.
+**"Can a farmer ask by voice?"**
+Yes. Set `GROQ_API_KEY` and `GROQ_MODEL=whisper-large-v3-turbo` in the project `.env` file. The app sends the recording to Groq only after the user selects **Transcribe and ask**, then displays the transcript and uses Gemini to answer it in Urdu. Recordings are not saved by the app. Typed questions do not need Groq. **Read answer aloud** remains on Gemini.
 
 **"What does 'calibration' mean?"**
 Adjusting the simulator's settings so that its harvest date roughly matches the official harvest time. Compare with the Punjab Agriculture Department or FAO crop calendar. It is *tuning*, not proof.
@@ -90,10 +90,10 @@ Adjusting the simulator's settings so that its harvest date roughly matches the 
 |---|---|
 | **A** | Data and simulator (Steps 2 to 4) |
 | **B** | App (Step 5) |
-| **C** | Claude helper and Urdu (Step 6) |
+| **C** | Gemini helper and Urdu (Step 6) |
 | **D** | Setup, Earth Engine signup, slides, README, testing, backup video |
 
-If only one or two of you can code, **A and B** are the coders. C can write the Claude prompt and test Urdu with no coding. D can prepare slides and the checklist.
+If only one or two of you can code, **A and B** are the coders. C can write the Gemini prompt and test Urdu with no coding. D can prepare slides and the checklist.
 
 ---
 
@@ -110,9 +110,7 @@ Times are relative to your start (Hour 0). Add breaks for food, prayer and commu
    pip install pandas numpy scipy requests streamlit anthropic
    ```
    If `pip` is not found, try `python -m pip install ...`.
-4. **Get a Claude API key** (person C) from your Anthropic Console account. Then save it as a variable on your computer (do not paste it in code):
-   - Mac/Linux: `export ANTHROPIC_API_KEY="your-key"`
-   - Windows (PowerShell): `$env:ANTHROPIC_API_KEY="your-key"`
+4. **Get a Gemini API key** (person C) from Google AI Studio. Add it as `GEMINI_API_KEY=your-key` in the project `.env` file; do not paste the key into code or commit `.env`.
 5. **Person D: sign up for Google Earth Engine** at https://console.cloud.google.com/earth-engine. Do this now even if you plan to skip Level 2. It can take time to approve.
 6. **Make a free GitHub repo** and share the folder, so all four of you work from the same files. Add `.gitignore` with a line `*.key` and never commit keys.
 
@@ -376,73 +374,24 @@ Run it with `streamlit run app.py`. A browser tab opens.
 
 ---
 
-### STEP 6: Claude helper in Urdu (Hour 1:30 onward) — Person C
+### STEP 6: Gemini helper, voice, and read-aloud (Hour 1:30 onward) — Person C
 
-The helper gets **your numbers** plus the person's question, and answers in Urdu. Rule: **Claude may only use numbers we give it.**
+The current app already connects the Gemini helper in `wheat-advisor/advisor.py`; do not replace it with the older Anthropic example. Keep `GEMINI_API_KEY` active in the project `.env`. The configured model is `gemini-3.8-flash`.
 
-Create `advisor.py`:
+In the app's **Ask in Urdu** tab, users can:
+- Type a question in Urdu script or Roman Urdu and receive an Urdu answer based on the app's results.
+- Record a spoken Urdu or Roman Urdu question and select **Transcribe and ask**. Groq Whisper transcribes the recording; Gemini then answers the transcript.
+- Select **Read answer aloud** to hear the displayed answer. Gemini generates and returns a WAV audio player.
 
-```python
-import json
-import anthropic
+The app sends a recording to Groq only after **Transcribe and ask** is selected, and it does not save recordings. Answers are heat-risk explanations based on historical simulation data, not forecasts or advice about seed, fertilizer, irrigation, pesticides, yield, or income.
 
-client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY from your computer
-
-SYSTEM = """You help Pakistani extension officers and farmers choose a wheat sowing date.
-Rules:
-- Use ONLY the numbers in the FACTS. Never invent numbers or facts.
-- Answer in simple Urdu (Urdu script). If the question is in Roman Urdu, still answer in Urdu script.
-- 3 to 5 short sentences.
-- Say this is based on the last 25 years of weather and a simulation, not a forecast.
-- Do NOT give advice about seed varieties, irrigation, fertilizer or pesticide.
-  If asked, say this tool cannot answer that and they should ask their extension officer.
-- If district or date is unclear, ask ONE short question."""
-
-def ask(facts: dict, question: str) -> str:
-    msg = client.messages.create(
-        model="claude-sonnet-5-5",   # if you get a model error, check the current name at docs.claude.com
-        max_tokens=600,
-        system=SYSTEM,
-        messages=[{"role": "user",
-                   "content": "FACTS:\n" + json.dumps(facts, ensure_ascii=False)
-                              + "\n\nQUESTION:\n" + question}],
-    )
-    return msg.content[0].text
-```
-
-Add this to the bottom of `app.py` so people can ask:
-
-```python
-from advisor import ask
-
-st.subheader("Ask in Urdu or Roman Urdu")
-q = st.text_input("Your question")
-if q:
-    facts = {"district": district, "chosen_sowing_date": sow,
-             "safest_window": [d["window_start"], d["window_end"]],
-             "best_day": d["best"], "extra_stress_vs_best": round(your - best, 1),
-             "share_of_past_years_best_day_was_ok": d["share_of_years_ok"],
-             "backtest_2022": d["backtest_2022"]}
-    try:
-        answer = ask(facts, q)
-    except Exception as e:
-        answer = "Claude is not available right now. " + str(e)
-    st.markdown(f"<div dir='rtl' style='font-size:20px'>{answer.replace(chr(10), '<br>')}</div>",
-                unsafe_allow_html=True)
-```
-
-The `dir='rtl'` part makes Urdu read right-to-left. Without it, Urdu text can look broken.
-
-**Test it with 10 questions** (Person C writes them in the first hour): some in Urdu script, some in Roman Urdu, some with a wrong district spelling, some vague ("when should I sow?"), and one about fertilizer (the helper should refuse politely). For each answer, check: every number matches the facts, the Urdu reads naturally to a native speaker, and nothing outside the facts is claimed.
-
-**Desi months:** farmers often say Katak, Maghar (roughly late October to mid-December). Ask a native speaker to confirm the mapping before you rely on it.
-
-**Backup for the demo:** before the presentation, run your 5 best questions and save the answers in `advice/demo_answers.json`. If the internet or API fails during the demo, show those instead.
+**Test it with questions** in Urdu script and Roman Urdu, including a district and sowing date. Confirm that the answer is Urdu and its dates and numbers match the app. Also try an out-of-scope question such as fertilizer and confirm the helper politely refuses it.
 
 **If it fails:**
-- "authentication error": the API key isn't set in this terminal. Set it again (Step 0.4).
-- "model not found": check the current model name in the Anthropic docs.
-- Urdu looks like boxes: your browser font is missing. Try Chrome, or add a Urdu web font (Noto Nastaliq Urdu).
+- Authentication error: check that `GEMINI_API_KEY` is active in `.env`, then restart Streamlit.
+- Model not found: check the configured model name in the Gemini API docs.
+- Voice control disabled: confirm the key is active and the browser has microphone permission.
+- Audio generation is unavailable: check Gemini API access and quota for the configured TTS model.
 
 ---
 
